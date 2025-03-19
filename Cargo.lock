@@ -3425,6 +3425,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustc_codegen_mlir"
+version = "0.0.0"
+dependencies = [
+ "bitflags 2.6.0",
+ "itertools",
+ "libc",
+ "measureme",
+ "object 0.36.4",
+ "rustc-demangle",
+ "rustc_abi",
+ "rustc_ast",
+ "rustc_attr",
+ "rustc_codegen_llvm",
+ "rustc_codegen_ssa",
+ "rustc_data_structures",
+ "rustc_errors",
+ "rustc_fluent_macro",
+ "rustc_fs_util",
+ "rustc_hir",
+ "rustc_index",
+ "rustc_llvm",
+ "rustc_macros",
+ "rustc_metadata",
+ "rustc_middle",
+ "rustc_query_system",
+ "rustc_sanitizers",
+ "rustc_session",
+ "rustc_span",
+ "rustc_symbol_mangling",
+ "rustc_target",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "tracing",
+]
+
+[[package]]
 name = "rustc_codegen_ssa"
 version = "0.0.0"
 dependencies = [
@@ -3857,6 +3894,7 @@ dependencies = [
  "rustc_borrowck",
  "rustc_builtin_macros",
  "rustc_codegen_llvm",
+ "rustc_codegen_mlir",
  "rustc_codegen_ssa",
  "rustc_const_eval",
  "rustc_data_structures",

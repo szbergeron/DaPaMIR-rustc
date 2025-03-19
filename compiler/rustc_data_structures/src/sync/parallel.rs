@@ -100,7 +100,7 @@ mod disabled {
     }
 }
 
-#[cfg(parallel_compiler)]
+#[cfg(all(parallel_compiler))]
 mod enabled {
     use crate::sync::{DynSend, DynSync, FromDyn, mode, parallel_guard};
 

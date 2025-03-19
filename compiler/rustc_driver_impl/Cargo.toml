@@ -72,6 +72,7 @@ ctrlc = "3.4.4"
 [features]
 # tidy-alphabetical-start
 llvm = ['rustc_interface/llvm']
+mlir = ['rustc_interface/mlir']
 max_level_info = ['rustc_log/max_level_info']
 rustc_randomized_layouts = [
     'rustc_index/rustc_randomized_layouts',

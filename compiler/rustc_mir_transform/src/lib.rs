@@ -104,6 +104,7 @@ mod sanity_check;
 mod shim;
 mod ssa;
 // This pass is public to allow external drivers to perform MIR cleanup
+mod parmir;
 pub mod simplify;
 mod simplify_branches;
 mod simplify_comparison_integral;
@@ -635,6 +636,7 @@ fn run_optimization_passes<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
             &prettify::ReorderLocals,
             // Dump the end result for testing and debugging purposes.
             &dump_mir::Marker("PreCodegen"),
+            &parmir::ParReEmit,
         ],
         Some(MirPhase::Runtime(RuntimePhase::Optimized)),
     );

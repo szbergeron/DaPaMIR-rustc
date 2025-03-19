@@ -43,7 +43,7 @@ members = [
   "src/tools/opt-dist",
   "src/tools/coverage-dump",
   "src/tools/rustc-perf-wrapper",
-  "src/tools/wasm-component-ld",
+  "src/tools/wasm-component-ld", "compiler/rustc_codegen_mlir",
 ]
 
 exclude = [

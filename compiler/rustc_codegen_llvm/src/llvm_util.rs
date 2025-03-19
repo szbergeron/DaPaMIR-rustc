@@ -487,7 +487,9 @@ fn handle_native(name: &str) -> &str {
     }
 }
 
-pub(crate) fn target_cpu(sess: &Session) -> &str {
+// TODO(szbergeron): making this public is a hack to enable a hack--
+// @me: put it back, and make your own impl
+pub fn target_cpu(sess: &Session) -> &str {
     match sess.opts.cg.target_cpu {
         Some(ref name) => handle_native(name),
         None => handle_native(sess.target.cpu.as_ref()),

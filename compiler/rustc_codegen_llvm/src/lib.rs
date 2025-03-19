@@ -77,7 +77,7 @@ pub mod llvm {
     pub use super::llvm_::*;
 }
 
-mod llvm_util;
+pub mod llvm_util;
 mod mono_item;
 mod type_;
 mod type_of;
