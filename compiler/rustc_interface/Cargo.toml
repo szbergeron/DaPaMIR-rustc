@@ -16,6 +16,7 @@ rustc_borrowck = { path = "../rustc_borrowck" }
 rustc_builtin_macros = { path = "../rustc_builtin_macros" }
 rustc_codegen_llvm = { path = "../rustc_codegen_llvm", optional = true }
 rustc_codegen_ssa = { path = "../rustc_codegen_ssa" }
+rustc_codegen_mlir = { path = "../rustc_codegen_mlir", optional = true }
 rustc_const_eval = { path = "../rustc_const_eval" }
 rustc_data_structures = { path = "../rustc_data_structures" }
 rustc_errors = { path = "../rustc_errors" }
@@ -58,4 +59,12 @@ rustc_abi = { path = "../rustc_abi" }
 [features]
 # tidy-alphabetical-start
 llvm = ['dep:rustc_codegen_llvm']
+mlir = ['dep:rustc_codegen_mlir']
+#TODO(szbergeron): clean up parallel hacks
+#rustc_use_parallel_compiler = [
+#    'dep:rustc-rayon',
+#    'dep:rustc-rayon-core',
+#    'rustc_query_impl/rustc_use_parallel_compiler',
+#    'rustc_errors/rustc_use_parallel_compiler'
+#]
 # tidy-alphabetical-end

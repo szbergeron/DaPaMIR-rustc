@@ -201,6 +201,7 @@ declare_passes! {
     mod unreachable_enum_branching : UnreachableEnumBranching;
     mod unreachable_prop : UnreachablePropagation;
     mod validate : Validator;
+    mod parmir;
 }
 
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }
@@ -732,6 +733,7 @@ fn run_optimization_passes<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
             &prettify::ReorderLocals,
             // Dump the end result for testing and debugging purposes.
             &dump_mir::Marker("PreCodegen"),
+            &parmir::ParReEmit,
         ],
         Some(MirPhase::Runtime(RuntimePhase::Optimized)),
         optimizations,

@@ -9,8 +9,8 @@ use rustc_metadata::EncodedMetadata;
 use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
 use rustc_middle::infer::canonical::ir::ConstKind::Value;
 use rustc_middle::ty::TyCtxt;
-use rustc_session::config::OutputFilenames;
 use rustc_session::Session;
+use rustc_session::config::OutputFilenames;
 
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }
 
@@ -70,16 +70,26 @@ impl WriteBackendMethods for MLIRCodegenBackend {
     fn run_fat_lto(
         cgcx: &rustc_codegen_ssa::back::write::CodegenContext<Self>,
         modules: Vec<rustc_codegen_ssa::back::write::FatLtoInput<Self>>,
-        cached_modules: Vec<(rustc_codegen_ssa::back::lto::SerializedModule<Self::ModuleBuffer>, WorkProduct)>,
-    ) -> Result<rustc_codegen_ssa::back::lto::LtoModuleCodegen<Self>, rustc_errors::FatalError> {
+        cached_modules: Vec<(
+            rustc_codegen_ssa::back::lto::SerializedModule<Self::ModuleBuffer>,
+            WorkProduct,
+        )>,
+    ) -> Result<rustc_codegen_ssa::back::lto::LtoModuleCodegen<Self>, rustc_errors::FatalError>
+    {
         todo!()
     }
 
     fn run_thin_lto(
         cgcx: &rustc_codegen_ssa::back::write::CodegenContext<Self>,
         modules: Vec<(String, Self::ThinBuffer)>,
-        cached_modules: Vec<(rustc_codegen_ssa::back::lto::SerializedModule<Self::ModuleBuffer>, WorkProduct)>,
-    ) -> Result<(Vec<rustc_codegen_ssa::back::lto::LtoModuleCodegen<Self>>, Vec<WorkProduct>), rustc_errors::FatalError> {
+        cached_modules: Vec<(
+            rustc_codegen_ssa::back::lto::SerializedModule<Self::ModuleBuffer>,
+            WorkProduct,
+        )>,
+    ) -> Result<
+        (Vec<rustc_codegen_ssa::back::lto::LtoModuleCodegen<Self>>, Vec<WorkProduct>),
+        rustc_errors::FatalError,
+    > {
         todo!()
     }
 
@@ -190,7 +200,6 @@ impl CodegenBackend for MLIRCodegenBackend {
         //link_binary(sess, &LlvmArchiveBuilderBuilder, &codegen_results, outputs)
 
         println!("unimplemented linking");
-
 
         Ok(())
     }
