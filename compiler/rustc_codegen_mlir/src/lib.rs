@@ -1,7 +1,29 @@
 #![allow(unused)]
 #![allow(internal_features)]
+#![allow(broken_intra_doc_links)]
+#![feature(rustc_private)]
 
-use rustc_codegen_ssa::traits::*;
+extern crate rustc_abi;
+extern crate rustc_ast;
+extern crate rustc_attr;
+extern crate rustc_codegen_ssa;
+extern crate rustc_data_structures;
+extern crate rustc_errors;
+extern crate rustc_fluent_macro;
+extern crate rustc_fs_util;
+extern crate rustc_hir;
+extern crate rustc_index;
+extern crate rustc_macros;
+extern crate rustc_metadata;
+extern crate rustc_middle;
+extern crate rustc_session;
+extern crate rustc_span;
+extern crate rustc_target;
+
+#[allow(unused_extern_crates)]
+extern crate rustc_driver;
+
+use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_codegen_ssa::{CodegenResults, CompiledModule, ModuleCodegen};
 use rustc_data_structures::fx::FxIndexMap;
 use rustc_errors::ErrorGuaranteed;
