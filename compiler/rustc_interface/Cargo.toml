@@ -60,11 +60,4 @@ rustc_abi = { path = "../rustc_abi" }
 # tidy-alphabetical-start
 llvm = ['dep:rustc_codegen_llvm']
 mlir = ['dep:rustc_codegen_mlir']
-#TODO(szbergeron): clean up parallel hacks
-#rustc_use_parallel_compiler = [
-#    'dep:rustc-rayon',
-#    'dep:rustc-rayon-core',
-#    'rustc_query_impl/rustc_use_parallel_compiler',
-#    'rustc_errors/rustc_use_parallel_compiler'
-#]
 # tidy-alphabetical-end
