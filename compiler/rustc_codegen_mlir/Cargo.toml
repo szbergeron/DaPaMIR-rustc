@@ -13,6 +13,8 @@ bitflags = "2.4.1"
 itertools = "0.12"
 libc = "0.2"
 measureme = "11"
+#melior = { path = "/home/sawyer/melior" }
+melior = { git = "https://github.com/szbergeron/melior.git", branch = "hacks_1" }
 object = { version = "0.36.3", default-features = false, features = ["std", "read"] }
 rustc-demangle = "0.1.21"
 rustc_abi = { path = "../rustc_abi" }
