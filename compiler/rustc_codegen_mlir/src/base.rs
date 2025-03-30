@@ -1,3 +1,4 @@
+use rustc_middle::mir::{BasicBlock, BasicBlockData, Body};
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_span::Symbol;
 
@@ -7,12 +8,38 @@ pub fn module_codegen(tcx: TyCtxt<'_>, cgu_name: Symbol) -> () {
     for (mono_item, data) in cgu.items() {
         match mono_item {
             rustc_middle::mir::mono::MonoItem::Fn(instance) => {
+                println!("fn instance is: {:?} >>>>>>>", instance.def_id());
                 let mir = tcx.instance_mir(instance.def);
 
-                println!("Got mir: {mir:?}");
+                fn pbody(b: &Body<'_>, prefix: &str) {
+                    let blocks = b.basic_blocks.reverse_postorder();
+
+                    for &block in blocks {
+                        println!("{prefix}block: {block:?}");
+                        let bdata: &BasicBlockData<'_> = &b.basic_blocks[block];
+                        for statement in bdata.statements.iter() {
+                            println!("{prefix}\t{statement:?} -- {}", statement.kind.name());
+                        }
+                    }
+                }
+
+                println!("mir body:");
+                pbody(mir, "| ");
+
+                println!("promoted bodies:");
+
+                let promoteds: _ = tcx.promoted_mir(instance.def_id());
+
+                for (idx, promoted) in promoteds.iter().enumerate() {
+                    println!("\tpromoted: {:?}::[{}]", instance.def_id(), idx);
+                    pbody(promoted, "\t| ");
+                }
+
+                println!("<<<<<<<");
+
+                //println!("Got mir: {mir:?}");
 
                 //instance.def_id().
-                println!("fn instance is: {:?}", instance.def_id());
                 match instance.def {
                     ty::InstanceKind::Item(def_id) => {
                         println!("item");
