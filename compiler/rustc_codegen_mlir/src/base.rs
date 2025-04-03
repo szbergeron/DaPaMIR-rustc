@@ -19,6 +19,31 @@ pub fn module_codegen(tcx: TyCtxt<'_>, cgu_name: Symbol) -> () {
                         let bdata: &BasicBlockData<'_> = &b.basic_blocks[block];
                         for statement in bdata.statements.iter() {
                             println!("{prefix}\t{statement:?} -- {}", statement.kind.name());
+                            match &statement.kind {
+                                rustc_middle::mir::StatementKind::Assign(b) => {
+                                    let (place, rval) = &**b;
+                                },
+                                rustc_middle::mir::StatementKind::SetDiscriminant
+                                    { place, variant_index } => todo!(),
+                                rustc_middle::mir::StatementKind::Deinit(place) => todo!(),
+                                rustc_middle::mir::StatementKind::StorageLive(_) => todo!(),
+                                rustc_middle::mir::StatementKind::StorageDead(_) => todo!(),
+                                rustc_middle::mir::StatementKind::Retag(retag_kind, place) => todo!(),
+                                rustc_middle::mir::StatementKind::PlaceMention(place) => todo!(),
+                                rustc_middle::mir::StatementKind::AscribeUserType(_, variance) => todo!(),
+                                rustc_middle::mir::StatementKind::Intrinsic(non_diverging_intrinsic) => todo!(),
+                                rustc_middle::mir::StatementKind::Nop => {
+                                    // actual noop
+                                },
+                                rustc_middle::mir::StatementKind::Coverage(coverage_kind) => {
+                                    // treat as noop for now
+                                },
+                                rustc_middle::mir::StatementKind::ConstEvalCounter => {
+                                    // should be actual noop unless we want to use for
+                                    // infinite loop detection?
+                                },
+                                rustc_middle::mir::StatementKind::FakeRead(_) => unreachable!("not allowed after drop?"),
+                            }
                         }
                     }
                 }
@@ -28,12 +53,12 @@ pub fn module_codegen(tcx: TyCtxt<'_>, cgu_name: Symbol) -> () {
 
                 println!("promoted bodies:");
 
-                let promoteds: _ = tcx.promoted_mir(instance.def_id());
+                /*let promoteds: _ = tcx.promoted_mir(instance.def_id());
 
                 for (idx, promoted) in promoteds.iter().enumerate() {
                     println!("\tpromoted: {:?}::[{}]", instance.def_id(), idx);
                     pbody(promoted, "\t| ");
-                }
+                }*/
 
                 println!("<<<<<<<");
 
