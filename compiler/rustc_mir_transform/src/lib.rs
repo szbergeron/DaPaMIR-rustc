@@ -201,7 +201,6 @@ declare_passes! {
     mod unreachable_enum_branching : UnreachableEnumBranching;
     mod unreachable_prop : UnreachablePropagation;
     mod validate : Validator;
-    mod parmir;
 }
 
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }

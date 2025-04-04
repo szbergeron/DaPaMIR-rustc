@@ -25,13 +25,25 @@ pub fn module_codegen(tcx: TyCtxt<'_>, cgu_name: Symbol) -> () {
                                 },
                                 rustc_middle::mir::StatementKind::SetDiscriminant
                                     { place, variant_index } => todo!(),
-                                rustc_middle::mir::StatementKind::Deinit(place) => todo!(),
-                                rustc_middle::mir::StatementKind::StorageLive(_) => todo!(),
-                                rustc_middle::mir::StatementKind::StorageDead(_) => todo!(),
+                                rustc_middle::mir::StatementKind::Deinit(place) => {
+                                    //println!("deinit");
+                                }
+                                rustc_middle::mir::StatementKind::StorageLive(_) => {
+                                    // skladjflkjasdjl
+                                },
+                                rustc_middle::mir::StatementKind::StorageDead(_) => {
+                                    // fdsajklfdshkdsgfl
+                                },
                                 rustc_middle::mir::StatementKind::Retag(retag_kind, place) => todo!(),
-                                rustc_middle::mir::StatementKind::PlaceMention(place) => todo!(),
-                                rustc_middle::mir::StatementKind::AscribeUserType(_, variance) => todo!(),
-                                rustc_middle::mir::StatementKind::Intrinsic(non_diverging_intrinsic) => todo!(),
+                                rustc_middle::mir::StatementKind::PlaceMention(place) => {
+                                    // dsfjklfdaskjl
+                                },
+                                rustc_middle::mir::StatementKind::AscribeUserType(_, variance) => {
+                                    // dfasjklfadsjkl
+                                },
+                                rustc_middle::mir::StatementKind::Intrinsic(non_diverging_intrinsic) => {
+                                    // sdafkhldfkl
+                                },
                                 rustc_middle::mir::StatementKind::Nop => {
                                     // actual noop
                                 },
@@ -43,6 +55,7 @@ pub fn module_codegen(tcx: TyCtxt<'_>, cgu_name: Symbol) -> () {
                                     // infinite loop detection?
                                 },
                                 rustc_middle::mir::StatementKind::FakeRead(_) => unreachable!("not allowed after drop?"),
+                                rustc_middle::mir::StatementKind::BackwardIncompatibleDropHint { place, reason } => todo!()
                             }
                         }
                     }

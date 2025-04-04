@@ -3593,10 +3593,8 @@ version = "0.0.0"
 dependencies = [
  "bitflags",
  "itertools",
- "libc",
  "measureme 11.0.1",
  "melior",
- "object 0.36.7",
  "serde",
  "serde_json",
  "smallvec",

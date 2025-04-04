@@ -5,7 +5,6 @@
 
 extern crate rustc_abi;
 extern crate rustc_ast;
-extern crate rustc_attr;
 extern crate rustc_codegen_ssa;
 extern crate rustc_data_structures;
 extern crate rustc_errors;
@@ -56,19 +55,19 @@ impl CodegenBackend for MLIRCodegenBackend {
     ) -> Box<dyn std::any::Any> {
         println!("doing crate codegen");
 
-        let (defids, codegen_units) = tcx.collect_and_partition_mono_items(());
+        let partitions = tcx.collect_and_partition_mono_items(());
 
         if tcx.dep_graph.is_fully_enabled() {
-            for cgu in codegen_units {
+            for cgu in partitions.codegen_units {
                 // TODO: do I need to use `ensure()`? since demand should be sufficient, no?
                 //let c1 = tcx.codegen_unit(cgu.name());
-                tcx.ensure().codegen_unit(cgu.name());
+                tcx.ensure_ok().codegen_unit(cgu.name());
             }
         } else {
             println!("dep graph not fully enabled");
         }
 
-        for (i, cgu) in codegen_units.iter().enumerate() {
+        for (i, cgu) in partitions.codegen_units.iter().enumerate() {
             let s = cgu.name();
             println!("looking at cgu: {s}");
             let dep_node = cgu.codegen_dep_node(tcx);
@@ -100,7 +99,7 @@ impl CodegenBackend for MLIRCodegenBackend {
         sess: &Session,
         codegen_results: CodegenResults,
         outputs: &OutputFilenames,
-    ) -> Result<(), ErrorGuaranteed> {
+    ) -> () {
         println!("doing link codegen");
 
         //use rustc_codegen_ssa::back::link::link_binary;
@@ -113,7 +112,8 @@ impl CodegenBackend for MLIRCodegenBackend {
 
         println!("unimplemented linking");
 
-        Ok(())
+        //Ok(())
+        ()
     }
 
     fn supports_parallel(&self) -> bool {
@@ -121,7 +121,7 @@ impl CodegenBackend for MLIRCodegenBackend {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn __rustc_codegen_backend() -> Box<dyn CodegenBackend> {
     Box::new(MLIRCodegenBackend(()))
 }
