@@ -58,6 +58,8 @@ pub fn module_codegen(tcx: TyCtxt<'_>, cgu_name: Symbol) -> () {
                                 rustc_middle::mir::StatementKind::BackwardIncompatibleDropHint { place, reason } => todo!()
                             }
                         }
+
+                        println!("  Term: {:?}", bdata.terminator);
                     }
                 }
 
