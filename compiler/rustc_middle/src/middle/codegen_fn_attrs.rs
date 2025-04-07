@@ -1,6 +1,6 @@
 use rustc_abi::Align;
 use rustc_ast::expand::autodiff_attrs::AutoDiffAttrs;
-use rustc_attr_data_structures::{InlineAttr, InstructionSetAttr, OptimizeAttr};
+use rustc_attr_data_structures::{InlineAttr, InstructionSetAttr, OptimizeAttr, DaPaAttr};
 use rustc_macros::{HashStable, TyDecodable, TyEncodable};
 use rustc_span::Symbol;
 use rustc_target::spec::SanitizerSet;
@@ -55,6 +55,8 @@ pub struct CodegenFnAttrs {
     pub patchable_function_entry: Option<PatchableFunctionEntry>,
     /// For the `#[autodiff]` macros.
     pub autodiff_item: Option<AutoDiffAttrs>,
+    /// Knobs for controlling DaPaMIR codegen properties of an fn
+    pub dapa: DaPaAttr,
 }
 
 #[derive(Copy, Clone, Debug, TyEncodable, TyDecodable, HashStable)]
@@ -164,6 +166,7 @@ impl CodegenFnAttrs {
             alignment: None,
             patchable_function_entry: None,
             autodiff_item: None,
+            dapa: DaPaAttr::None,
         }
     }
 

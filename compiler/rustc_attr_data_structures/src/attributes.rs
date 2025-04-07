@@ -32,6 +32,13 @@ impl InlineAttr {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Encodable, Decodable, Debug, HashStable_Generic)]
+pub enum DaPaAttr {
+    None,
+    /// #[dapa]
+    DaPaEmpty,
+}
+
 #[derive(Clone, Encodable, Decodable, Debug, PartialEq, Eq, HashStable_Generic)]
 pub enum InstructionSetAttr {
     ArmA32,

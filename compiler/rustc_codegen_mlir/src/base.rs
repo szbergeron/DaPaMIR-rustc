@@ -24,7 +24,8 @@ pub fn module_codegen(tcx: TyCtxt<'_>, cgu_name: Symbol) -> () {
                                     let (place, rval) = &**b;
                                 },
                                 rustc_middle::mir::StatementKind::SetDiscriminant
-                                    { place, variant_index } => todo!(),
+                                    { place, variant_index } => {
+                                },
                                 rustc_middle::mir::StatementKind::Deinit(place) => {
                                     //println!("deinit");
                                 }
@@ -34,7 +35,9 @@ pub fn module_codegen(tcx: TyCtxt<'_>, cgu_name: Symbol) -> () {
                                 rustc_middle::mir::StatementKind::StorageDead(_) => {
                                     // fdsajklfdshkdsgfl
                                 },
-                                rustc_middle::mir::StatementKind::Retag(retag_kind, place) => todo!(),
+                                rustc_middle::mir::StatementKind::Retag(retag_kind, place) => {
+                                    todo!("got retag?");
+                                },
                                 rustc_middle::mir::StatementKind::PlaceMention(place) => {
                                     // dsfjklfdaskjl
                                 },
