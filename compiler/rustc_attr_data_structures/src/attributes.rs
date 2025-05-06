@@ -32,6 +32,27 @@ impl InlineAttr {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Encodable, Decodable, Debug, HashStable_Generic)]
+pub enum DapaAttr {
+    None,
+    /// #[dapa]
+    Plain,
+    /// #[dapa(all)], for generating code for all enabled targets
+    All,
+}
+
+impl std::ops::BitOr for DapaAttr {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (DapaAttr::None, other) | (other, DapaAttr::None) => other,
+            (DapaAttr::Plain, other) | (other, DapaAttr::Plain) => other,
+            (DapaAttr::All, DapaAttr::All) => DapaAttr::All,
+        }
+    }
+}
+
 #[derive(Clone, Encodable, Decodable, Debug, PartialEq, Eq, HashStable_Generic)]
 pub enum InstructionSetAttr {
     ArmA32,

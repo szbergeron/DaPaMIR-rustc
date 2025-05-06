@@ -4,7 +4,7 @@ use rustc_abi::ExternAbi;
 use rustc_ast::expand::autodiff_attrs::{AutoDiffAttrs, DiffActivity, DiffMode};
 use rustc_ast::{MetaItem, MetaItemInner, attr};
 use rustc_attr_parsing::ReprAttr::ReprAlign;
-use rustc_attr_parsing::{AttributeKind, InlineAttr, InstructionSetAttr, OptimizeAttr};
+use rustc_attr_parsing::{AttributeKind, DapaAttr, InlineAttr, InstructionSetAttr, OptimizeAttr};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::{DefId, LOCAL_CRATE, LocalDefId};
@@ -458,11 +458,26 @@ fn codegen_fn_attrs(tcx: TyCtxt<'_>, did: LocalDefId) -> CodegenFnAttrs {
                     ))
                 })
             }
+            sym::dapa => {
+                panic!("aaaaa");
+            }
             _ => {}
         }
     }
 
     mixed_export_name_no_mangle_lint_state.lint_if_mixed(tcx);
+
+    codegen_fn_attrs.dapa = attrs.iter().fold(DapaAttr::None, |ia, attr| {
+        if !attr.has_name(sym::dapa) {
+            return ia;
+        }
+
+        if attr.is_word() {
+            return ia | DapaAttr::Plain;
+        }
+
+        todo!("Figure out #[dapa(...)] variants")
+    });
 
     codegen_fn_attrs.inline = attrs.iter().fold(InlineAttr::None, |ia, attr| {
         if !attr.has_name(sym::inline) {

@@ -40,8 +40,6 @@ mod base;
 #[derive(Clone)]
 pub struct MLIRCodegenBackend(());
 
-struct CodegenCarrier {}
-
 impl CodegenBackend for MLIRCodegenBackend {
     fn locale_resource(&self) -> &'static str {
         crate::DEFAULT_LOCALE_RESOURCE
@@ -59,7 +57,7 @@ impl CodegenBackend for MLIRCodegenBackend {
 
         if tcx.dep_graph.is_fully_enabled() {
             for cgu in partitions.codegen_units {
-                // TODO: do I need to use `ensure()`? since demand should be sufficient, no?
+                // TODO: do I still need to use `ensure()`? since demand should be sufficient, no?
                 //let c1 = tcx.codegen_unit(cgu.name());
                 tcx.ensure_ok().codegen_unit(cgu.name());
             }

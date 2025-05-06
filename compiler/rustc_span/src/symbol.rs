@@ -227,6 +227,7 @@ symbols! {
         ControlFlow,
         Copy,
         Cow,
+        //
         Debug,
         DebugStruct,
         Decodable,
@@ -779,6 +780,7 @@ symbols! {
         custom_test_frameworks,
         d,
         d32,
+        dapa,
         dbg_macro,
         dead_code,
         dealloc,
