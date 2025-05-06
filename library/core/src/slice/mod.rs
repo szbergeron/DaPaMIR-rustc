@@ -8,7 +8,7 @@
 
 use crate::cmp::Ordering::{self, Equal, Greater, Less};
 use crate::intrinsics::{exact_div, unchecked_sub};
-use crate::mem::{self, SizedTypeProperties};
+use crate::mem::{self, MaybeUninit, SizedTypeProperties};
 use crate::num::NonZero;
 use crate::ops::{OneSidedRange, OneSidedRangeBound, Range, RangeBounds, RangeInclusive};
 use crate::panic::const_panic;
@@ -109,6 +109,7 @@ impl<T> [T] {
     #[lang = "slice_len_fn"]
     #[stable(feature = "rust1", since = "1.0.0")]
     #[rustc_const_stable(feature = "const_slice_len", since = "1.39.0")]
+    #[cfg_attr(not(bootstrap), rustc_no_implicit_autorefs)]
     #[inline]
     #[must_use]
     pub const fn len(&self) -> usize {
@@ -128,6 +129,7 @@ impl<T> [T] {
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
     #[rustc_const_stable(feature = "const_slice_is_empty", since = "1.39.0")]
+    #[cfg_attr(not(bootstrap), rustc_no_implicit_autorefs)]
     #[inline]
     #[must_use]
     pub const fn is_empty(&self) -> bool {
@@ -562,6 +564,7 @@ impl<T> [T] {
     /// assert_eq!(None, v.get(0..4));
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
+    #[cfg_attr(not(bootstrap), rustc_no_implicit_autorefs)]
     #[inline]
     #[must_use]
     pub fn get<I>(&self, index: I) -> Option<&I::Output>
@@ -587,6 +590,7 @@ impl<T> [T] {
     /// assert_eq!(x, &[0, 42, 2]);
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
+    #[cfg_attr(not(bootstrap), rustc_no_implicit_autorefs)]
     #[inline]
     #[must_use]
     pub fn get_mut<I>(&mut self, index: I) -> Option<&mut I::Output>
@@ -624,6 +628,7 @@ impl<T> [T] {
     /// }
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
+    #[cfg_attr(not(bootstrap), rustc_no_implicit_autorefs)]
     #[inline]
     #[must_use]
     pub unsafe fn get_unchecked<I>(&self, index: I) -> &I::Output
@@ -666,6 +671,7 @@ impl<T> [T] {
     /// assert_eq!(x, &[1, 13, 4]);
     /// ```
     #[stable(feature = "rust1", since = "1.0.0")]
+    #[cfg_attr(not(bootstrap), rustc_no_implicit_autorefs)]
     #[inline]
     #[must_use]
     pub unsafe fn get_unchecked_mut<I>(&mut self, index: I) -> &mut I::Output
@@ -1262,6 +1268,18 @@ impl<T> [T] {
     /// Splits the slice into a slice of `N`-element arrays,
     /// assuming that there's no remainder.
     ///
+    /// This is the inverse operation to [`as_flattened`].
+    ///
+    /// [`as_flattened`]: slice::as_flattened
+    ///
+    /// As this is `unsafe`, consider whether you could use [`as_chunks`] or
+    /// [`as_rchunks`] instead, perhaps via something like
+    /// `if let (chunks, []) = slice.as_chunks()` or
+    /// `let (chunks, []) = slice.as_chunks() else { unreachable!() };`.
+    ///
+    /// [`as_chunks`]: slice::as_chunks
+    /// [`as_rchunks`]: slice::as_rchunks
+    ///
     /// # Safety
     ///
     /// This may only be called when
@@ -1271,7 +1289,6 @@ impl<T> [T] {
     /// # Examples
     ///
     /// ```
-    /// #![feature(slice_as_chunks)]
     /// let slice: &[char] = &['l', 'o', 'r', 'e', 'm', '!'];
     /// let chunks: &[[char; 1]] =
     ///     // SAFETY: 1-element chunks never have remainder
@@ -1286,8 +1303,8 @@ impl<T> [T] {
     /// // let chunks: &[[_; 5]] = slice.as_chunks_unchecked() // The slice length is not a multiple of 5
     /// // let chunks: &[[_; 0]] = slice.as_chunks_unchecked() // Zero-length chunks are never allowed
     /// ```
-    #[unstable(feature = "slice_as_chunks", issue = "74985")]
-    #[rustc_const_unstable(feature = "slice_as_chunks", issue = "74985")]
+    #[stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
     #[inline]
     #[must_use]
     pub const unsafe fn as_chunks_unchecked<const N: usize>(&self) -> &[[T; N]] {
@@ -1307,15 +1324,27 @@ impl<T> [T] {
     /// starting at the beginning of the slice,
     /// and a remainder slice with length strictly less than `N`.
     ///
+    /// The remainder is meaningful in the division sense.  Given
+    /// `let (chunks, remainder) = slice.as_chunks()`, then:
+    /// - `chunks.len()` equals `slice.len() / N`,
+    /// - `remainder.len()` equals `slice.len() % N`, and
+    /// - `slice.len()` equals `chunks.len() * N + remainder.len()`.
+    ///
+    /// You can flatten the chunks back into a slice-of-`T` with [`as_flattened`].
+    ///
+    /// [`as_flattened`]: slice::as_flattened
+    ///
     /// # Panics
     ///
-    /// Panics if `N` is zero. This check will most probably get changed to a compile time
-    /// error before this method gets stabilized.
+    /// Panics if `N` is zero.
+    ///
+    /// Note that this check is against a const generic parameter, not a runtime
+    /// value, and thus a particular monomorphization will either always panic
+    /// or it will never panic.
     ///
     /// # Examples
     ///
     /// ```
-    /// #![feature(slice_as_chunks)]
     /// let slice = ['l', 'o', 'r', 'e', 'm'];
     /// let (chunks, remainder) = slice.as_chunks();
     /// assert_eq!(chunks, &[['l', 'o'], ['r', 'e']]);
@@ -1325,15 +1354,14 @@ impl<T> [T] {
     /// If you expect the slice to be an exact multiple, you can combine
     /// `let`-`else` with an empty slice pattern:
     /// ```
-    /// #![feature(slice_as_chunks)]
     /// let slice = ['R', 'u', 's', 't'];
     /// let (chunks, []) = slice.as_chunks::<2>() else {
     ///     panic!("slice didn't have even length")
     /// };
     /// assert_eq!(chunks, &[['R', 'u'], ['s', 't']]);
     /// ```
-    #[unstable(feature = "slice_as_chunks", issue = "74985")]
-    #[rustc_const_unstable(feature = "slice_as_chunks", issue = "74985")]
+    #[stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
     #[inline]
     #[track_caller]
     #[must_use]
@@ -1353,22 +1381,34 @@ impl<T> [T] {
     /// starting at the end of the slice,
     /// and a remainder slice with length strictly less than `N`.
     ///
+    /// The remainder is meaningful in the division sense.  Given
+    /// `let (remainder, chunks) = slice.as_rchunks()`, then:
+    /// - `remainder.len()` equals `slice.len() % N`,
+    /// - `chunks.len()` equals `slice.len() / N`, and
+    /// - `slice.len()` equals `chunks.len() * N + remainder.len()`.
+    ///
+    /// You can flatten the chunks back into a slice-of-`T` with [`as_flattened`].
+    ///
+    /// [`as_flattened`]: slice::as_flattened
+    ///
     /// # Panics
     ///
-    /// Panics if `N` is zero. This check will most probably get changed to a compile time
-    /// error before this method gets stabilized.
+    /// Panics if `N` is zero.
+    ///
+    /// Note that this check is against a const generic parameter, not a runtime
+    /// value, and thus a particular monomorphization will either always panic
+    /// or it will never panic.
     ///
     /// # Examples
     ///
     /// ```
-    /// #![feature(slice_as_chunks)]
     /// let slice = ['l', 'o', 'r', 'e', 'm'];
     /// let (remainder, chunks) = slice.as_rchunks();
     /// assert_eq!(remainder, &['l']);
     /// assert_eq!(chunks, &[['o', 'r'], ['e', 'm']]);
     /// ```
-    #[unstable(feature = "slice_as_chunks", issue = "74985")]
-    #[rustc_const_unstable(feature = "slice_as_chunks", issue = "74985")]
+    #[stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
     #[inline]
     #[track_caller]
     #[must_use]
@@ -1421,6 +1461,18 @@ impl<T> [T] {
     /// Splits the slice into a slice of `N`-element arrays,
     /// assuming that there's no remainder.
     ///
+    /// This is the inverse operation to [`as_flattened_mut`].
+    ///
+    /// [`as_flattened_mut`]: slice::as_flattened_mut
+    ///
+    /// As this is `unsafe`, consider whether you could use [`as_chunks_mut`] or
+    /// [`as_rchunks_mut`] instead, perhaps via something like
+    /// `if let (chunks, []) = slice.as_chunks_mut()` or
+    /// `let (chunks, []) = slice.as_chunks_mut() else { unreachable!() };`.
+    ///
+    /// [`as_chunks_mut`]: slice::as_chunks_mut
+    /// [`as_rchunks_mut`]: slice::as_rchunks_mut
+    ///
     /// # Safety
     ///
     /// This may only be called when
@@ -1430,7 +1482,6 @@ impl<T> [T] {
     /// # Examples
     ///
     /// ```
-    /// #![feature(slice_as_chunks)]
     /// let slice: &mut [char] = &mut ['l', 'o', 'r', 'e', 'm', '!'];
     /// let chunks: &mut [[char; 1]] =
     ///     // SAFETY: 1-element chunks never have remainder
@@ -1447,8 +1498,8 @@ impl<T> [T] {
     /// // let chunks: &[[_; 5]] = slice.as_chunks_unchecked_mut() // The slice length is not a multiple of 5
     /// // let chunks: &[[_; 0]] = slice.as_chunks_unchecked_mut() // Zero-length chunks are never allowed
     /// ```
-    #[unstable(feature = "slice_as_chunks", issue = "74985")]
-    #[rustc_const_unstable(feature = "slice_as_chunks", issue = "74985")]
+    #[stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
     #[inline]
     #[must_use]
     pub const unsafe fn as_chunks_unchecked_mut<const N: usize>(&mut self) -> &mut [[T; N]] {
@@ -1468,15 +1519,27 @@ impl<T> [T] {
     /// starting at the beginning of the slice,
     /// and a remainder slice with length strictly less than `N`.
     ///
+    /// The remainder is meaningful in the division sense.  Given
+    /// `let (chunks, remainder) = slice.as_chunks_mut()`, then:
+    /// - `chunks.len()` equals `slice.len() / N`,
+    /// - `remainder.len()` equals `slice.len() % N`, and
+    /// - `slice.len()` equals `chunks.len() * N + remainder.len()`.
+    ///
+    /// You can flatten the chunks back into a slice-of-`T` with [`as_flattened_mut`].
+    ///
+    /// [`as_flattened_mut`]: slice::as_flattened_mut
+    ///
     /// # Panics
     ///
-    /// Panics if `N` is zero. This check will most probably get changed to a compile time
-    /// error before this method gets stabilized.
+    /// Panics if `N` is zero.
+    ///
+    /// Note that this check is against a const generic parameter, not a runtime
+    /// value, and thus a particular monomorphization will either always panic
+    /// or it will never panic.
     ///
     /// # Examples
     ///
     /// ```
-    /// #![feature(slice_as_chunks)]
     /// let v = &mut [0, 0, 0, 0, 0];
     /// let mut count = 1;
     ///
@@ -1488,8 +1551,8 @@ impl<T> [T] {
     /// }
     /// assert_eq!(v, &[1, 1, 2, 2, 9]);
     /// ```
-    #[unstable(feature = "slice_as_chunks", issue = "74985")]
-    #[rustc_const_unstable(feature = "slice_as_chunks", issue = "74985")]
+    #[stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
     #[inline]
     #[track_caller]
     #[must_use]
@@ -1509,15 +1572,27 @@ impl<T> [T] {
     /// starting at the end of the slice,
     /// and a remainder slice with length strictly less than `N`.
     ///
+    /// The remainder is meaningful in the division sense.  Given
+    /// `let (remainder, chunks) = slice.as_rchunks_mut()`, then:
+    /// - `remainder.len()` equals `slice.len() % N`,
+    /// - `chunks.len()` equals `slice.len() / N`, and
+    /// - `slice.len()` equals `chunks.len() * N + remainder.len()`.
+    ///
+    /// You can flatten the chunks back into a slice-of-`T` with [`as_flattened_mut`].
+    ///
+    /// [`as_flattened_mut`]: slice::as_flattened_mut
+    ///
     /// # Panics
     ///
-    /// Panics if `N` is zero. This check will most probably get changed to a compile time
-    /// error before this method gets stabilized.
+    /// Panics if `N` is zero.
+    ///
+    /// Note that this check is against a const generic parameter, not a runtime
+    /// value, and thus a particular monomorphization will either always panic
+    /// or it will never panic.
     ///
     /// # Examples
     ///
     /// ```
-    /// #![feature(slice_as_chunks)]
     /// let v = &mut [0, 0, 0, 0, 0];
     /// let mut count = 1;
     ///
@@ -1529,8 +1604,8 @@ impl<T> [T] {
     /// }
     /// assert_eq!(v, &[9, 1, 1, 2, 2]);
     /// ```
-    #[unstable(feature = "slice_as_chunks", issue = "74985")]
-    #[rustc_const_unstable(feature = "slice_as_chunks", issue = "74985")]
+    #[stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "slice_as_chunks", since = "CURRENT_RUSTC_VERSION")]
     #[inline]
     #[track_caller]
     #[must_use]
@@ -2820,7 +2895,7 @@ impl<T> [T] {
             let half = size / 2;
             let mid = base + half;
 
-            // SAFETY: the call is made safe by the following inconstants:
+            // SAFETY: the call is made safe by the following invariants:
             // - `mid >= 0`: by definition
             // - `mid < size`: `mid = size / 2 + size / 4 + size / 8 ...`
             let cmp = f(unsafe { self.get_unchecked(mid) });
@@ -2828,7 +2903,7 @@ impl<T> [T] {
             // Binary search interacts poorly with branch prediction, so force
             // the compiler to use conditional moves if supported by the target
             // architecture.
-            base = (cmp == Greater).select_unpredictable(base, mid);
+            base = hint::select_unpredictable(cmp == Greater, base, mid);
 
             // This is imprecise in the case where `size` is odd and the
             // comparison returns Greater: the mid element still gets included
@@ -3721,7 +3796,7 @@ impl<T> [T] {
     #[doc(alias = "memcpy")]
     #[inline]
     #[stable(feature = "copy_from_slice", since = "1.9.0")]
-    #[rustc_const_stable(feature = "const_copy_from_slice", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "const_copy_from_slice", since = "1.87.0")]
     #[track_caller]
     pub const fn copy_from_slice(&mut self, src: &[T])
     where
@@ -4331,7 +4406,7 @@ impl<T> [T] {
     /// ```
     #[inline]
     #[must_use = "method does not modify the slice if the range is out of bounds"]
-    #[stable(feature = "slice_take", since = "CURRENT_RUSTC_VERSION")]
+    #[stable(feature = "slice_take", since = "1.87.0")]
     pub fn split_off<'a, R: OneSidedRange<usize>>(
         self: &mut &'a Self,
         range: R,
@@ -4397,7 +4472,7 @@ impl<T> [T] {
     /// ```
     #[inline]
     #[must_use = "method does not modify the slice if the range is out of bounds"]
-    #[stable(feature = "slice_take", since = "CURRENT_RUSTC_VERSION")]
+    #[stable(feature = "slice_take", since = "1.87.0")]
     pub fn split_off_mut<'a, R: OneSidedRange<usize>>(
         self: &mut &'a mut Self,
         range: R,
@@ -4434,7 +4509,7 @@ impl<T> [T] {
     /// assert_eq!(first, &'a');
     /// ```
     #[inline]
-    #[stable(feature = "slice_take", since = "CURRENT_RUSTC_VERSION")]
+    #[stable(feature = "slice_take", since = "1.87.0")]
     #[rustc_const_unstable(feature = "const_split_off_first_last", issue = "138539")]
     pub const fn split_off_first<'a>(self: &mut &'a Self) -> Option<&'a T> {
         // FIXME(const-hack): Use `?` when available in const instead of `let-else`.
@@ -4459,7 +4534,7 @@ impl<T> [T] {
     /// assert_eq!(first, &'d');
     /// ```
     #[inline]
-    #[stable(feature = "slice_take", since = "CURRENT_RUSTC_VERSION")]
+    #[stable(feature = "slice_take", since = "1.87.0")]
     #[rustc_const_unstable(feature = "const_split_off_first_last", issue = "138539")]
     pub const fn split_off_first_mut<'a>(self: &mut &'a mut Self) -> Option<&'a mut T> {
         // FIXME(const-hack): Use `mem::take` and `?` when available in const.
@@ -4484,7 +4559,7 @@ impl<T> [T] {
     /// assert_eq!(last, &'c');
     /// ```
     #[inline]
-    #[stable(feature = "slice_take", since = "CURRENT_RUSTC_VERSION")]
+    #[stable(feature = "slice_take", since = "1.87.0")]
     #[rustc_const_unstable(feature = "const_split_off_first_last", issue = "138539")]
     pub const fn split_off_last<'a>(self: &mut &'a Self) -> Option<&'a T> {
         // FIXME(const-hack): Use `?` when available in const instead of `let-else`.
@@ -4509,7 +4584,7 @@ impl<T> [T] {
     /// assert_eq!(last, &'d');
     /// ```
     #[inline]
-    #[stable(feature = "slice_take", since = "CURRENT_RUSTC_VERSION")]
+    #[stable(feature = "slice_take", since = "1.87.0")]
     #[rustc_const_unstable(feature = "const_split_off_first_last", issue = "138539")]
     pub const fn split_off_last_mut<'a>(self: &mut &'a mut Self) -> Option<&'a mut T> {
         // FIXME(const-hack): Use `mem::take` and `?` when available in const.
@@ -4579,7 +4654,7 @@ impl<T> [T] {
         // or generate worse code otherwise. This is also why we need to go
         // through a raw pointer here.
         let slice: *mut [T] = self;
-        let mut arr: mem::MaybeUninit<[&mut I::Output; N]> = mem::MaybeUninit::uninit();
+        let mut arr: MaybeUninit<[&mut I::Output; N]> = MaybeUninit::uninit();
         let arr_ptr = arr.as_mut_ptr();
 
         // SAFETY: We expect `indices` to contain disjunct values that are
@@ -4764,8 +4839,62 @@ impl<T> [T] {
     }
 }
 
+impl<T> [MaybeUninit<T>] {
+    /// Transmutes the mutable uninitialized slice to a mutable uninitialized slice of
+    /// another type, ensuring alignment of the types is maintained.
+    ///
+    /// This is a safe wrapper around [`slice::align_to_mut`], so inherits the same
+    /// guarantees as that method.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #![feature(align_to_uninit_mut)]
+    /// use std::mem::MaybeUninit;
+    ///
+    /// pub struct BumpAllocator<'scope> {
+    ///     memory: &'scope mut [MaybeUninit<u8>],
+    /// }
+    ///
+    /// impl<'scope> BumpAllocator<'scope> {
+    ///     pub fn new(memory: &'scope mut [MaybeUninit<u8>]) -> Self {
+    ///         Self { memory }
+    ///     }
+    ///     pub fn try_alloc_uninit<T>(&mut self) -> Option<&'scope mut MaybeUninit<T>> {
+    ///         let first_end = self.memory.as_ptr().align_offset(align_of::<T>()) + size_of::<T>();
+    ///         let prefix = self.memory.split_off_mut(..first_end)?;
+    ///         Some(&mut prefix.align_to_uninit_mut::<T>().1[0])
+    ///     }
+    ///     pub fn try_alloc_u32(&mut self, value: u32) -> Option<&'scope mut u32> {
+    ///         let uninit = self.try_alloc_uninit()?;
+    ///         Some(uninit.write(value))
+    ///     }
+    /// }
+    ///
+    /// let mut memory = [MaybeUninit::<u8>::uninit(); 10];
+    /// let mut allocator = BumpAllocator::new(&mut memory);
+    /// let v = allocator.try_alloc_u32(42);
+    /// assert_eq!(v, Some(&mut 42));
+    /// ```
+    #[unstable(feature = "align_to_uninit_mut", issue = "139062")]
+    #[inline]
+    #[must_use]
+    pub fn align_to_uninit_mut<U>(&mut self) -> (&mut Self, &mut [MaybeUninit<U>], &mut Self) {
+        // SAFETY: `MaybeUninit` is transparent. Correct size and alignment are guaranteed by
+        // `align_to_mut` itself. Therefore the only thing that we have to ensure for a safe
+        // `transmute` is that the values are valid for the types involved. But for `MaybeUninit`
+        // any values are valid, so this operation is safe.
+        unsafe { self.align_to_mut() }
+    }
+}
+
 impl<T, const N: usize> [[T; N]] {
     /// Takes a `&[[T; N]]`, and flattens it to a `&[T]`.
+    ///
+    /// For the opposite operation, see [`as_chunks`] and [`as_rchunks`].
+    ///
+    /// [`as_chunks`]: slice::as_chunks
+    /// [`as_rchunks`]: slice::as_rchunks
     ///
     /// # Panics
     ///
@@ -4792,7 +4921,7 @@ impl<T, const N: usize> [[T; N]] {
     /// assert!(empty_slice_of_arrays.as_flattened().is_empty());
     /// ```
     #[stable(feature = "slice_flatten", since = "1.80.0")]
-    #[rustc_const_stable(feature = "const_slice_flatten", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "const_slice_flatten", since = "1.87.0")]
     pub const fn as_flattened(&self) -> &[T] {
         let len = if T::IS_ZST {
             self.len().checked_mul(N).expect("slice len overflow")
@@ -4806,6 +4935,11 @@ impl<T, const N: usize> [[T; N]] {
     }
 
     /// Takes a `&mut [[T; N]]`, and flattens it to a `&mut [T]`.
+    ///
+    /// For the opposite operation, see [`as_chunks_mut`] and [`as_rchunks_mut`].
+    ///
+    /// [`as_chunks_mut`]: slice::as_chunks_mut
+    /// [`as_rchunks_mut`]: slice::as_rchunks_mut
     ///
     /// # Panics
     ///
@@ -4829,7 +4963,7 @@ impl<T, const N: usize> [[T; N]] {
     /// assert_eq!(array, [[6, 7, 8], [9, 10, 11], [12, 13, 14]]);
     /// ```
     #[stable(feature = "slice_flatten", since = "1.80.0")]
-    #[rustc_const_stable(feature = "const_slice_flatten", since = "CURRENT_RUSTC_VERSION")]
+    #[rustc_const_stable(feature = "const_slice_flatten", since = "1.87.0")]
     pub const fn as_flattened_mut(&mut self) -> &mut [T] {
         let len = if T::IS_ZST {
             self.len().checked_mul(N).expect("slice len overflow")

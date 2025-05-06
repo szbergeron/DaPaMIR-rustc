@@ -323,7 +323,7 @@ pub fn walk_crate<'a, V: Visitor<'a>>(visitor: &mut V, krate: &'a Crate) -> V::R
 }
 
 pub fn walk_local<'a, V: Visitor<'a>>(visitor: &mut V, local: &'a Local) -> V::Result {
-    let Local { id: _, pat, ty, kind, span: _, colon_sp: _, attrs, tokens: _ } = local;
+    let Local { id: _, super_: _, pat, ty, kind, span: _, colon_sp: _, attrs, tokens: _ } = local;
     walk_list!(visitor, visit_attribute, attrs);
     try_visit!(visitor.visit_pat(pat));
     visit_opt!(visitor, visit_ty, ty);
@@ -608,6 +608,7 @@ pub fn walk_ty_pat<'a, V: Visitor<'a>>(visitor: &mut V, tp: &'a TyPat) -> V::Res
             visit_opt!(visitor, visit_anon_const, start);
             visit_opt!(visitor, visit_anon_const, end);
         }
+        TyPatKind::Or(variants) => walk_list!(visitor, visit_ty_pat, variants),
         TyPatKind::Err(_) => {}
     }
     V::Result::output()
@@ -750,7 +751,7 @@ pub fn walk_pat<'a, V: Visitor<'a>>(visitor: &mut V, pattern: &'a Pat) -> V::Res
             try_visit!(visitor.visit_pat(subpattern));
             try_visit!(visitor.visit_expr(guard_condition));
         }
-        PatKind::Wild | PatKind::Rest | PatKind::Never => {}
+        PatKind::Missing | PatKind::Wild | PatKind::Rest | PatKind::Never => {}
         PatKind::Err(_guar) => {}
         PatKind::Tuple(elems) | PatKind::Slice(elems) | PatKind::Or(elems) => {
             walk_list!(visitor, visit_pat, elems);

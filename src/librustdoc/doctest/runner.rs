@@ -113,6 +113,7 @@ impl DocTestRunner {
 mod __doctest_mod {{
     use std::sync::OnceLock;
     use std::path::PathBuf;
+    use std::process::ExitCode;
 
     pub static BINARY_PATH: OnceLock<PathBuf> = OnceLock::new();
     pub const RUN_OPTION: &str = \"RUSTDOC_DOCTEST_RUN_NB_TEST\";
@@ -123,16 +124,32 @@ mod __doctest_mod {{
     }}
 
     #[allow(unused)]
-    pub fn doctest_runner(bin: &std::path::Path, test_nb: usize) -> Result<(), String> {{
+    pub fn doctest_runner(bin: &std::path::Path, test_nb: usize) -> ExitCode {{
         let out = std::process::Command::new(bin)
             .env(self::RUN_OPTION, test_nb.to_string())
             .args(std::env::args().skip(1).collect::<Vec<_>>())
             .output()
             .expect(\"failed to run command\");
         if !out.status.success() {{
-            Err(String::from_utf8_lossy(&out.stderr).to_string())
+            if let Some(code) = out.status.code() {{
+                eprintln!(\"Test executable failed (exit status: {{code}}).\");
+            }} else {{
+                eprintln!(\"Test executable failed (terminated by signal).\");
+            }}
+            if !out.stdout.is_empty() || !out.stderr.is_empty() {{
+                eprintln!();
+            }}
+            if !out.stdout.is_empty() {{
+                eprintln!(\"stdout:\");
+                eprintln!(\"{{}}\", String::from_utf8_lossy(&out.stdout));
+            }}
+            if !out.stderr.is_empty() {{
+                eprintln!(\"stderr:\");
+                eprintln!(\"{{}}\", String::from_utf8_lossy(&out.stderr));
+            }}
+            ExitCode::FAILURE
         }} else {{
-            Ok(())
+            ExitCode::SUCCESS
         }}
     }}
 }}

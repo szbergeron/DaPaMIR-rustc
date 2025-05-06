@@ -315,6 +315,7 @@ impl<'a, 'tcx> Visitor<'a, 'tcx> for UnsafetyVisitor<'a, 'tcx> {
     fn visit_pat(&mut self, pat: &'a Pat<'tcx>) {
         if self.in_union_destructure {
             match pat.kind {
+                PatKind::Missing => unreachable!(),
                 // binding to a variable allows getting stuff out of variable
                 PatKind::Binding { .. }
                 // match is conditional on having this value
@@ -403,9 +404,9 @@ impl<'a, 'tcx> Visitor<'a, 'tcx> for UnsafetyVisitor<'a, 'tcx> {
                 visit::walk_pat(self, pat);
                 self.inside_adt = old_inside_adt;
             }
-            PatKind::ExpandedConstant { def_id, is_inline, .. } => {
+            PatKind::ExpandedConstant { def_id, .. } => {
                 if let Some(def) = def_id.as_local()
-                    && *is_inline
+                    && matches!(self.tcx.def_kind(def_id), DefKind::InlineConst)
                 {
                     self.visit_inner_body(def);
                 }
@@ -563,13 +564,17 @@ impl<'a, 'tcx> Visitor<'a, 'tcx> for UnsafetyVisitor<'a, 'tcx> {
                 }
             }
             ExprKind::InlineAsm(box InlineAsmExpr {
-                asm_macro: AsmMacro::Asm | AsmMacro::NakedAsm,
+                asm_macro: asm_macro @ (AsmMacro::Asm | AsmMacro::NakedAsm),
                 ref operands,
                 template: _,
                 options: _,
                 line_spans: _,
             }) => {
-                self.requires_unsafe(expr.span, UseOfInlineAssembly);
+                // The `naked` attribute and the `naked_asm!` block form one atomic unit of
+                // unsafety, and `naked_asm!` does not itself need to be wrapped in an unsafe block.
+                if let AsmMacro::Asm = asm_macro {
+                    self.requires_unsafe(expr.span, UseOfInlineAssembly);
+                }
 
                 // For inline asm, do not use `walk_expr`, since we want to handle the label block
                 // specially.

@@ -28,10 +28,9 @@ use rustc_middle::ty::error::TypeErrorToStringExt;
 use rustc_middle::ty::print::{PrintTraitRefExt as _, with_no_trimmed_paths};
 use rustc_middle::ty::{
     self, GenericArgsRef, PolyProjectionPredicate, Ty, TyCtxt, TypeFoldable, TypeVisitableExt,
-    TypingMode, Upcast,
+    TypingMode, Upcast, elaborate,
 };
 use rustc_span::{Symbol, sym};
-use rustc_type_ir::elaborate;
 use tracing::{debug, instrument, trace};
 
 use self::EvaluationResult::*;
@@ -49,7 +48,9 @@ use crate::infer::{InferCtxt, InferOk, TypeFreshener};
 use crate::solve::InferCtxtSelectExt as _;
 use crate::traits::normalize::{normalize_with_depth, normalize_with_depth_to};
 use crate::traits::project::{ProjectAndUnifyResult, ProjectionCacheKeyExt};
-use crate::traits::{EvaluateConstErr, ProjectionCacheKey, Unimplemented, effects};
+use crate::traits::{
+    EvaluateConstErr, ProjectionCacheKey, Unimplemented, effects, sizedness_fast_path,
+};
 
 mod _match;
 mod candidate_assembly;
@@ -603,6 +604,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             None => self.check_recursion_limit(&obligation, &obligation)?,
         }
 
+        if sizedness_fast_path(self.tcx(), obligation.predicate) {
+            return Ok(EvaluatedToOk);
+        }
+
         ensure_sufficient_stack(|| {
             let bound_predicate = obligation.predicate.kind();
             match bound_predicate.skip_binder() {
@@ -652,7 +657,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                     }
                 }
 
-                ty::PredicateKind::Clause(ty::ClauseKind::WellFormed(arg)) => {
+                ty::PredicateKind::Clause(ty::ClauseKind::WellFormed(term)) => {
                     // So, there is a bit going on here. First, `WellFormed` predicates
                     // are coinductive, like trait predicates with auto traits.
                     // This means that we need to detect if we have recursively
@@ -676,11 +681,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                     let cache = previous_stack.cache;
                     let dfn = cache.next_dfn();
 
-                    for stack_arg in previous_stack.cache.wf_args.borrow().iter().rev() {
-                        if stack_arg.0 != arg {
+                    for stack_term in previous_stack.cache.wf_args.borrow().iter().rev() {
+                        if stack_term.0 != term {
                             continue;
                         }
-                        debug!("WellFormed({:?}) on stack", arg);
+                        debug!("WellFormed({:?}) on stack", term);
                         if let Some(stack) = previous_stack.head {
                             // Okay, let's imagine we have two different stacks:
                             //   `T: NonAutoTrait -> WF(T) -> T: NonAutoTrait`
@@ -696,11 +701,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                             // would contain `(T, 1)`. We want to check all
                             // trait predicates greater than `1`. The previous
                             // stack would be `T: Auto`.
-                            let cycle = stack.iter().take_while(|s| s.depth > stack_arg.1);
+                            let cycle = stack.iter().take_while(|s| s.depth > stack_term.1);
                             let tcx = self.tcx();
                             let cycle = cycle.map(|stack| stack.obligation.predicate.upcast(tcx));
                             if self.coinductive_match(cycle) {
-                                stack.update_reached_depth(stack_arg.1);
+                                stack.update_reached_depth(stack_term.1);
                                 return Ok(EvaluatedToOk);
                             } else {
                                 return Ok(EvaluatedToAmbigStackDependent);
@@ -714,11 +719,11 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
                         obligation.param_env,
                         obligation.cause.body_id,
                         obligation.recursion_depth + 1,
-                        arg,
+                        term,
                         obligation.cause.span,
                     ) {
                         Some(obligations) => {
-                            cache.wf_args.borrow_mut().push((arg, previous_stack.depth()));
+                            cache.wf_args.borrow_mut().push((term, previous_stack.depth()));
                             let result =
                                 self.evaluate_predicates_recursively(previous_stack, obligations);
                             cache.wf_args.borrow_mut().pop();
@@ -1446,6 +1451,7 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
         match self.infcx.typing_mode() {
             TypingMode::Coherence => {}
             TypingMode::Analysis { .. }
+            | TypingMode::Borrowck { .. }
             | TypingMode::PostBorrowckAnalysis { .. }
             | TypingMode::PostAnalysis => return Ok(()),
         }
@@ -1491,7 +1497,10 @@ impl<'cx, 'tcx> SelectionContext<'cx, 'tcx> {
             // However, if we disqualify *all* goals from being cached, perf suffers.
             // This is likely fixed by better caching in general in the new solver.
             // See: <https://github.com/rust-lang/rust/issues/132064>.
-            TypingMode::Analysis { defining_opaque_types } => {
+            TypingMode::Analysis {
+                defining_opaque_types_and_generators: defining_opaque_types,
+            }
+            | TypingMode::Borrowck { defining_opaque_types } => {
                 defining_opaque_types.is_empty() || !pred.has_opaque_types()
             }
             // The hidden types of `defined_opaque_types` is not local to the current
@@ -2299,6 +2308,11 @@ impl<'tcx> SelectionContext<'_, 'tcx> {
             | ty::Never
             | ty::Char => ty::Binder::dummy(Vec::new()),
 
+            // This branch is only for `experimental_default_bounds`.
+            // Other foreign types were rejected earlier in
+            // `assemble_candidates_from_auto_impls`.
+            ty::Foreign(..) => ty::Binder::dummy(Vec::new()),
+
             // FIXME(unsafe_binders): Squash the double binder for now, I guess.
             ty::UnsafeBinder(_) => return Err(SelectionError::Unimplemented),
 
@@ -2308,8 +2322,7 @@ impl<'tcx> SelectionContext<'_, 'tcx> {
             ty::Placeholder(..)
             | ty::Dynamic(..)
             | ty::Param(..)
-            | ty::Foreign(..)
-            | ty::Alias(ty::Projection | ty::Inherent | ty::Weak, ..)
+            | ty::Alias(ty::Projection | ty::Inherent | ty::Free, ..)
             | ty::Bound(..)
             | ty::Infer(ty::TyVar(_) | ty::FreshTy(_) | ty::FreshIntTy(_) | ty::FreshFloatTy(_)) => {
                 bug!("asked to assemble constituent types of unexpected type: {:?}", t);
@@ -2955,14 +2968,14 @@ struct ProvisionalEvaluationCache<'tcx> {
     ///   means the cached value for `F`.
     map: RefCell<FxIndexMap<ty::PolyTraitPredicate<'tcx>, ProvisionalEvaluation>>,
 
-    /// The stack of args that we assume to be true because a `WF(arg)` predicate
+    /// The stack of terms that we assume to be well-formed because a `WF(term)` predicate
     /// is on the stack above (and because of wellformedness is coinductive).
     /// In an "ideal" world, this would share a stack with trait predicates in
     /// `TraitObligationStack`. However, trait predicates are *much* hotter than
     /// `WellFormed` predicates, and it's very likely that the additional matches
     /// will have a perf effect. The value here is the well-formed `GenericArg`
     /// and the depth of the trait predicate *above* that well-formed predicate.
-    wf_args: RefCell<Vec<(ty::GenericArg<'tcx>, usize)>>,
+    wf_args: RefCell<Vec<(ty::Term<'tcx>, usize)>>,
 }
 
 /// A cache value for the provisional cache: contains the depth-first

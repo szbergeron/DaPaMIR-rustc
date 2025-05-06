@@ -199,7 +199,7 @@ pub trait Iterator {
     ///
     /// The method does no guarding against overflows, so counting elements of
     /// an iterator with more than [`usize::MAX`] elements either produces the
-    /// wrong result or panics. If debug assertions are enabled, a panic is
+    /// wrong result or panics. If overflow checks are enabled, a panic is
     /// guaranteed.
     ///
     /// # Panics
@@ -931,7 +931,7 @@ pub trait Iterator {
     ///
     /// The method does no guarding against overflows, so enumerating more than
     /// [`usize::MAX`] elements either produces the wrong result or panics. If
-    /// debug assertions are enabled, a panic is guaranteed.
+    /// overflow checks are enabled, a panic is guaranteed.
     ///
     /// # Panics
     ///
@@ -1340,6 +1340,25 @@ pub trait Iterator {
     /// assert_eq!(iter.next(), Some(2));
     /// assert_eq!(iter.next(), None);
     /// ```
+    ///
+    /// Use [`by_ref`] to take from the iterator without consuming it, and then
+    /// continue using the original iterator:
+    ///
+    /// ```
+    /// let mut words = ["hello", "world", "of", "Rust"].into_iter();
+    ///
+    /// // Take the first two words.
+    /// let hello_world: Vec<_> = words.by_ref().take(2).collect();
+    /// assert_eq!(hello_world, vec!["hello", "world"]);
+    ///
+    /// // Collect the rest of the words.
+    /// // We can only do this because we used `by_ref` earlier.
+    /// let of_rust: Vec<_> = words.collect();
+    /// assert_eq!(of_rust, vec!["of", "Rust"]);
+    /// ```
+    ///
+    /// [`by_ref`]: Iterator::by_ref
+    #[doc(alias = "limit")]
     #[inline]
     #[stable(feature = "rust1", since = "1.0.0")]
     fn take(self, n: usize) -> Take<Self>
@@ -2964,7 +2983,7 @@ pub trait Iterator {
     ///
     /// The method does no guarding against overflows, so if there are more
     /// than [`usize::MAX`] non-matching elements, it either produces the wrong
-    /// result or panics. If debug assertions are enabled, a panic is
+    /// result or panics. If overflow checks are enabled, a panic is
     /// guaranteed.
     ///
     /// # Panics
@@ -3516,7 +3535,7 @@ pub trait Iterator {
     /// # Panics
     ///
     /// When calling `sum()` and a primitive integer type is being returned, this
-    /// method will panic if the computation overflows and debug assertions are
+    /// method will panic if the computation overflows and overflow checks are
     /// enabled.
     ///
     /// # Examples
@@ -3550,7 +3569,7 @@ pub trait Iterator {
     /// # Panics
     ///
     /// When calling `product()` and a primitive integer type is being returned,
-    /// method will panic if the computation overflows and debug assertions are
+    /// method will panic if the computation overflows and overflow checks are
     /// enabled.
     ///
     /// # Examples

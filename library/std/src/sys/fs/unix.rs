@@ -12,10 +12,11 @@ use libc::c_char;
     all(target_os = "linux", not(target_env = "musl")),
     target_os = "android",
     target_os = "fuchsia",
-    target_os = "hurd"
+    target_os = "hurd",
+    target_os = "illumos",
 ))]
 use libc::dirfd;
-#[cfg(target_os = "fuchsia")]
+#[cfg(any(target_os = "fuchsia", target_os = "illumos"))]
 use libc::fstatat as fstatat64;
 #[cfg(any(all(target_os = "linux", not(target_env = "musl")), target_os = "hurd"))]
 use libc::fstatat64;
@@ -74,6 +75,7 @@ use libc::{dirent64, fstat64, ftruncate64, lseek64, lstat64, off64_t, open64, st
 
 use crate::ffi::{CStr, OsStr, OsString};
 use crate::fmt::{self, Write as _};
+use crate::fs::TryLockError;
 use crate::io::{self, BorrowedCursor, Error, IoSlice, IoSliceMut, SeekFrom};
 use crate::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd};
 use crate::os::unix::prelude::*;
@@ -146,14 +148,14 @@ cfg_has_statx! {{
         flags: i32,
         mask: u32,
     ) -> Option<io::Result<FileAttr>> {
-        use crate::sync::atomic::{AtomicU8, Ordering};
+        use crate::sync::atomic::{Atomic, AtomicU8, Ordering};
 
         // Linux kernel prior to 4.11 or glibc prior to glibc 2.28 don't support `statx`.
         // We check for it on first failure and remember availability to avoid having to
         // do it again.
         #[repr(u8)]
         enum STATX_STATE{ Unknown = 0, Present, Unavailable }
-        static STATX_SAVED_STATE: AtomicU8 = AtomicU8::new(STATX_STATE::Unknown as u8);
+        static STATX_SAVED_STATE: Atomic<u8> = AtomicU8::new(STATX_STATE::Unknown as u8);
 
         syscall!(
             fn statx(
@@ -892,7 +894,8 @@ impl DirEntry {
             all(target_os = "linux", not(target_env = "musl")),
             target_os = "android",
             target_os = "fuchsia",
-            target_os = "hurd"
+            target_os = "hurd",
+            target_os = "illumos",
         ),
         not(miri) // no dirfd on Miri
     ))]
@@ -922,6 +925,7 @@ impl DirEntry {
             target_os = "android",
             target_os = "fuchsia",
             target_os = "hurd",
+            target_os = "illumos",
         )),
         miri
     ))]
@@ -1307,15 +1311,17 @@ impl File {
         target_os = "netbsd",
         target_vendor = "apple",
     ))]
-    pub fn try_lock(&self) -> io::Result<bool> {
+    pub fn try_lock(&self) -> Result<(), TryLockError> {
         let result = cvt(unsafe { libc::flock(self.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) });
-        if let Err(ref err) = result {
+        if let Err(err) = result {
             if err.kind() == io::ErrorKind::WouldBlock {
-                return Ok(false);
+                Err(TryLockError::WouldBlock)
+            } else {
+                Err(TryLockError::Error(err))
             }
+        } else {
+            Ok(())
         }
-        result?;
-        return Ok(true);
     }
 
     #[cfg(not(any(
@@ -1325,8 +1331,11 @@ impl File {
         target_os = "netbsd",
         target_vendor = "apple",
     )))]
-    pub fn try_lock(&self) -> io::Result<bool> {
-        Err(io::const_error!(io::ErrorKind::Unsupported, "try_lock() not supported"))
+    pub fn try_lock(&self) -> Result<(), TryLockError> {
+        Err(TryLockError::Error(io::const_error!(
+            io::ErrorKind::Unsupported,
+            "try_lock() not supported"
+        )))
     }
 
     #[cfg(any(
@@ -1336,15 +1345,17 @@ impl File {
         target_os = "netbsd",
         target_vendor = "apple",
     ))]
-    pub fn try_lock_shared(&self) -> io::Result<bool> {
+    pub fn try_lock_shared(&self) -> Result<(), TryLockError> {
         let result = cvt(unsafe { libc::flock(self.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) });
-        if let Err(ref err) = result {
+        if let Err(err) = result {
             if err.kind() == io::ErrorKind::WouldBlock {
-                return Ok(false);
+                Err(TryLockError::WouldBlock)
+            } else {
+                Err(TryLockError::Error(err))
             }
+        } else {
+            Ok(())
         }
-        result?;
-        return Ok(true);
     }
 
     #[cfg(not(any(
@@ -1354,8 +1365,11 @@ impl File {
         target_os = "netbsd",
         target_vendor = "apple",
     )))]
-    pub fn try_lock_shared(&self) -> io::Result<bool> {
-        Err(io::const_error!(io::ErrorKind::Unsupported, "try_lock_shared() not supported"))
+    pub fn try_lock_shared(&self) -> Result<(), TryLockError> {
+        Err(TryLockError::Error(io::const_error!(
+            io::ErrorKind::Unsupported,
+            "try_lock_shared() not supported"
+        )))
     }
 
     #[cfg(any(
@@ -1463,20 +1477,6 @@ impl File {
         Ok(())
     }
 
-    // FIXME(#115199): Rust currently omits weak function definitions
-    // and its metadata from LLVM IR.
-    #[cfg_attr(
-        any(
-            target_os = "android",
-            all(
-                target_os = "linux",
-                target_env = "gnu",
-                target_pointer_width = "32",
-                not(target_arch = "riscv32")
-            )
-        ),
-        no_sanitize(cfi)
-    )]
     pub fn set_times(&self, times: FileTimes) -> io::Result<()> {
         #[cfg(not(any(
             target_os = "redox",
@@ -2146,6 +2146,12 @@ pub fn chroot(dir: &Path) -> io::Result<()> {
 pub fn chroot(dir: &Path) -> io::Result<()> {
     let _ = dir;
     Err(io::const_error!(io::ErrorKind::Unsupported, "chroot not supported by vxworks"))
+}
+
+pub fn mkfifo(path: &Path, mode: u32) -> io::Result<()> {
+    run_path_with_cstr(path, &|path| {
+        cvt(unsafe { libc::mkfifo(path.as_ptr(), mode.try_into().unwrap()) }).map(|_| ())
+    })
 }
 
 pub use remove_dir_impl::remove_dir_all;

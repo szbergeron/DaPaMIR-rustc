@@ -2,7 +2,7 @@ use crate::io;
 use crate::sys::anonymous_pipe::{AnonPipe, pipe as pipe_inner};
 use crate::sys_common::{FromInner, IntoInner};
 
-/// Create an anonymous pipe.
+/// Creates an anonymous pipe.
 ///
 /// # Behavior
 ///
@@ -67,19 +67,19 @@ use crate::sys_common::{FromInner, IntoInner};
 /// ```
 /// [changes]: io#platform-specific-behavior
 /// [man page]: https://man7.org/linux/man-pages/man7/pipe.7.html
-#[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+#[stable(feature = "anonymous_pipe", since = "1.87.0")]
 #[inline]
 pub fn pipe() -> io::Result<(PipeReader, PipeWriter)> {
     pipe_inner().map(|(reader, writer)| (PipeReader(reader), PipeWriter(writer)))
 }
 
 /// Read end of an anonymous pipe.
-#[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+#[stable(feature = "anonymous_pipe", since = "1.87.0")]
 #[derive(Debug)]
 pub struct PipeReader(pub(crate) AnonPipe);
 
 /// Write end of an anonymous pipe.
-#[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+#[stable(feature = "anonymous_pipe", since = "1.87.0")]
 #[derive(Debug)]
 pub struct PipeWriter(pub(crate) AnonPipe);
 
@@ -108,7 +108,7 @@ impl IntoInner<AnonPipe> for PipeWriter {
 }
 
 impl PipeReader {
-    /// Create a new [`PipeReader`] instance that shares the same underlying file description.
+    /// Creates a new [`PipeReader`] instance that shares the same underlying file description.
     ///
     /// # Examples
     ///
@@ -160,14 +160,14 @@ impl PipeReader {
     /// # Ok(())
     /// # }
     /// ```
-    #[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+    #[stable(feature = "anonymous_pipe", since = "1.87.0")]
     pub fn try_clone(&self) -> io::Result<Self> {
         self.0.try_clone().map(Self)
     }
 }
 
 impl PipeWriter {
-    /// Create a new [`PipeWriter`] instance that shares the same underlying file description.
+    /// Creates a new [`PipeWriter`] instance that shares the same underlying file description.
     ///
     /// # Examples
     ///
@@ -199,13 +199,13 @@ impl PipeWriter {
     /// # Ok(())
     /// # }
     /// ```
-    #[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+    #[stable(feature = "anonymous_pipe", since = "1.87.0")]
     pub fn try_clone(&self) -> io::Result<Self> {
         self.0.try_clone().map(Self)
     }
 }
 
-#[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+#[stable(feature = "anonymous_pipe", since = "1.87.0")]
 impl io::Read for &PipeReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.0.read(buf)
@@ -225,7 +225,7 @@ impl io::Read for &PipeReader {
     }
 }
 
-#[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+#[stable(feature = "anonymous_pipe", since = "1.87.0")]
 impl io::Read for PipeReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.0.read(buf)
@@ -245,7 +245,7 @@ impl io::Read for PipeReader {
     }
 }
 
-#[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+#[stable(feature = "anonymous_pipe", since = "1.87.0")]
 impl io::Write for &PipeWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0.write(buf)
@@ -263,7 +263,7 @@ impl io::Write for &PipeWriter {
     }
 }
 
-#[stable(feature = "anonymous_pipe", since = "CURRENT_RUSTC_VERSION")]
+#[stable(feature = "anonymous_pipe", since = "1.87.0")]
 impl io::Write for PipeWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0.write(buf)

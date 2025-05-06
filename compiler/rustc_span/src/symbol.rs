@@ -174,7 +174,6 @@ symbols! {
         Arc,
         ArcWeak,
         Argument,
-        ArgumentMethods,
         ArrayIntoIter,
         AsMut,
         AsRef,
@@ -250,6 +249,7 @@ symbols! {
         Error,
         File,
         FileType,
+        FmtArgumentsNew,
         Fn,
         FnMut,
         FnOnce,
@@ -373,6 +373,7 @@ symbols! {
         SyncUnsafeCell,
         T,
         Target,
+        This,
         ToOwned,
         ToString,
         TokenStream,
@@ -455,6 +456,7 @@ symbols! {
         and_then,
         anon,
         anon_adt,
+        anon_assoc,
         anonymous_lifetime_in_impl_trait,
         any,
         append_const_msg,
@@ -501,17 +503,8 @@ symbols! {
         async_call_mut,
         async_call_once,
         async_closure,
-        async_destruct,
         async_drop,
-        async_drop_chain,
-        async_drop_defer,
-        async_drop_deferred_drop_in_place,
-        async_drop_either,
-        async_drop_fuse,
         async_drop_in_place,
-        async_drop_noop,
-        async_drop_slice,
-        async_drop_surface_drop_in_place,
         async_fn,
         async_fn_in_dyn_trait,
         async_fn_in_trait,
@@ -539,6 +532,7 @@ symbols! {
         autodiff,
         automatically_derived,
         avx,
+        avx10_target_feature,
         avx512_target_feature,
         avx512bw,
         avx512f,
@@ -622,6 +616,7 @@ symbols! {
         cfg_target_feature,
         cfg_target_has_atomic,
         cfg_target_has_atomic_equal_alignment,
+        cfg_target_has_reliable_f16_f128,
         cfg_target_thread_local,
         cfg_target_vendor,
         cfg_trace: "<cfg>", // must not be a valid identifier
@@ -802,6 +797,15 @@ symbols! {
         default_fn,
         default_lib_allocator,
         default_method_body_is_const,
+        // --------------------------
+        // Lang items which are used only for experiments with auto traits with default bounds.
+        // These lang items are not actually defined in core/std. Experiment is a part of
+        // `MCP: Low level components for async drop`(https://github.com/rust-lang/compiler-team/issues/727)
+        default_trait1,
+        default_trait2,
+        default_trait3,
+        default_trait4,
+        // --------------------------
         default_type_parameter_fallback,
         default_type_params,
         define_opaque,
@@ -908,9 +912,11 @@ symbols! {
         expf16,
         expf32,
         expf64,
+        explicit_extern_abis,
         explicit_generic_args_with_impl_trait,
         explicit_tail_calls,
         export_name,
+        export_stable,
         expr,
         expr_2021,
         expr_fragment_specifier_2024,
@@ -973,7 +979,6 @@ symbols! {
         fadd_fast,
         fake_variadic,
         fallback,
-        fallback_surface_drop,
         fdiv_algebraic,
         fdiv_fast,
         feature,
@@ -1046,6 +1051,7 @@ symbols! {
         from_u16,
         from_usize,
         from_yeet,
+        frontmatter,
         fs_create_dir,
         fsub_algebraic,
         fsub_fast,
@@ -1054,13 +1060,13 @@ symbols! {
         fundamental,
         fused_iterator,
         future,
+        future_drop_poll,
         future_output,
         future_trait,
         gdb_script_file,
         ge,
         gen_blocks,
         gen_future,
-        gen_kill,
         generator_clone,
         generators,
         generic_arg_infer,
@@ -1178,6 +1184,7 @@ symbols! {
         instruction_set,
         integer_: "integer", // underscore to avoid clashing with the function `sym::integer` below
         integral,
+        internal_features,
         into_async_iter_into_iter,
         into_future,
         into_iter,
@@ -1392,6 +1399,7 @@ symbols! {
         naked,
         naked_asm,
         naked_functions,
+        naked_functions_rustic_abi,
         naked_functions_target_feature,
         name,
         names,
@@ -1511,14 +1519,18 @@ symbols! {
         panic_cannot_unwind,
         panic_const_add_overflow,
         panic_const_async_fn_resumed,
+        panic_const_async_fn_resumed_drop,
         panic_const_async_fn_resumed_panic,
         panic_const_async_gen_fn_resumed,
+        panic_const_async_gen_fn_resumed_drop,
         panic_const_async_gen_fn_resumed_panic,
         panic_const_coroutine_resumed,
+        panic_const_coroutine_resumed_drop,
         panic_const_coroutine_resumed_panic,
         panic_const_div_by_zero,
         panic_const_div_overflow,
         panic_const_gen_fn_none,
+        panic_const_gen_fn_none_drop,
         panic_const_gen_fn_none_panic,
         panic_const_mul_overflow,
         panic_const_neg_overflow,
@@ -1813,13 +1825,13 @@ symbols! {
         rustc_lint_opt_ty,
         rustc_lint_query_instability,
         rustc_lint_untracked_query_information,
-        rustc_macro_edition_2021,
         rustc_macro_transparency,
         rustc_main,
         rustc_mir,
         rustc_must_implement_one_of,
         rustc_never_returns_null_ptr,
         rustc_never_type_options,
+        rustc_no_implicit_autorefs,
         rustc_no_mir_inline,
         rustc_nonnull_optimization_guaranteed,
         rustc_nounwind,
@@ -1870,10 +1882,12 @@ symbols! {
         saturating_add,
         saturating_div,
         saturating_sub,
+        sdylib,
         search_unbox,
         select_unpredictable,
         self_in_typedefs,
         self_struct_ctor,
+        semiopaque,
         semitransparent,
         sha2,
         sha3,
@@ -1906,6 +1920,7 @@ symbols! {
         simd_eq,
         simd_expose_provenance,
         simd_extract,
+        simd_extract_dyn,
         simd_fabs,
         simd_fcos,
         simd_fexp,
@@ -1924,6 +1939,7 @@ symbols! {
         simd_ge,
         simd_gt,
         simd_insert,
+        simd_insert_dyn,
         simd_le,
         simd_lt,
         simd_masked_load,
@@ -2044,7 +2060,6 @@ symbols! {
         suggestion,
         super_let,
         supertrait_item_shadowing,
-        surface_async_drop_in_place,
         sym,
         sync,
         synthetic,
@@ -2060,6 +2075,10 @@ symbols! {
         target_has_atomic,
         target_has_atomic_equal_alignment,
         target_has_atomic_load_store,
+        target_has_reliable_f128,
+        target_has_reliable_f128_math,
+        target_has_reliable_f16,
+        target_has_reliable_f16_math,
         target_os,
         target_pointer_width,
         target_thread_local,
@@ -2204,7 +2223,8 @@ symbols! {
         unsafe_extern_blocks,
         unsafe_fields,
         unsafe_no_drop_flag,
-        unsafe_pin_internals,
+        unsafe_pinned,
+        unsafe_unpin,
         unsize,
         unsized_const_param_ty,
         unsized_const_params,
@@ -2531,13 +2551,8 @@ rustc_index::newtype_index! {
 }
 
 impl Symbol {
-    const fn new(n: u32) -> Self {
+    pub const fn new(n: u32) -> Self {
         Symbol(SymbolIndex::from_u32(n))
-    }
-
-    /// for use in Decoder only
-    pub fn new_from_decoded(n: u32) -> Self {
-        Self::new(n)
     }
 
     /// Maps a string to its interned representation.
@@ -2625,11 +2640,14 @@ struct InternerInner {
 }
 
 impl Interner {
-    fn prefill(init: &[&'static str]) -> Self {
-        Interner(Lock::new(InternerInner {
-            arena: Default::default(),
-            strings: init.iter().copied().collect(),
-        }))
+    fn prefill(init: &[&'static str], extra: &[&'static str]) -> Self {
+        let strings = FxIndexSet::from_iter(init.iter().copied().chain(extra.iter().copied()));
+        assert_eq!(
+            strings.len(),
+            init.len() + extra.len(),
+            "`init` or `extra` contain duplicate symbols",
+        );
+        Interner(Lock::new(InternerInner { arena: Default::default(), strings }))
     }
 
     #[inline]
@@ -2753,9 +2771,9 @@ impl Symbol {
         self != kw::Empty && self != kw::Underscore && !self.is_path_segment_keyword()
     }
 
-    /// Is this symbol was interned in compiler's `symbols!` macro
-    pub fn is_preinterned(self) -> bool {
-        self.as_u32() < PREINTERNED_SYMBOLS_COUNT
+    /// Was this symbol predefined in the compiler's `symbols!` macro
+    pub fn is_predefined(self) -> bool {
+        self.as_u32() < PREDEFINED_SYMBOLS_COUNT
     }
 }
 

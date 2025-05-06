@@ -201,9 +201,9 @@ impl<'a, 'tcx> SpanEncoder for EncodeContext<'a, 'tcx> {
     }
 
     fn encode_symbol(&mut self, symbol: Symbol) {
-        // if symbol preinterned, emit tag and symbol index
-        if symbol.is_preinterned() {
-            self.opaque.emit_u8(SYMBOL_PREINTERNED);
+        // if symbol predefined, emit tag and symbol index
+        if symbol.is_predefined() {
+            self.opaque.emit_u8(SYMBOL_PREDEFINED);
             self.opaque.emit_u32(symbol.as_u32());
         } else {
             // otherwise write it as string or as offset to it
@@ -551,8 +551,6 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
 
             match source_file.name {
                 FileName::Real(ref original_file_name) => {
-                    // FIXME: This should probably to conditionally remapped under
-                    // a RemapPathScopeComponents but which one?
                     let adapted_file_name = source_map
                         .path_mapping()
                         .to_embeddable_absolute_path(original_file_name.clone(), working_directory);
@@ -673,6 +671,11 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
         let debugger_visualizers =
             stat!("debugger-visualizers", || self.encode_debugger_visualizers());
 
+        let exportable_items = stat!("exportable-items", || self.encode_exportable_items());
+
+        let stable_order_of_exportable_impls =
+            stat!("exportable-items", || self.encode_stable_order_of_exportable_impls());
+
         // Encode exported symbols info. This is prefetched in `encode_metadata`.
         let exported_symbols = stat!("exported-symbols", || {
             self.encode_exported_symbols(tcx.exported_symbols(LOCAL_CRATE))
@@ -740,6 +743,8 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
                 traits,
                 impls,
                 incoherent_impls,
+                exportable_items,
+                stable_order_of_exportable_impls,
                 exported_symbols,
                 interpret_alloc_index,
                 tables,
@@ -821,7 +826,9 @@ struct AnalyzeAttrState<'a> {
 #[inline]
 fn analyze_attr(attr: &impl AttributeExt, state: &mut AnalyzeAttrState<'_>) -> bool {
     let mut should_encode = false;
-    if !rustc_feature::encode_cross_crate(attr.name_or_empty()) {
+    if let Some(name) = attr.name()
+        && !rustc_feature::encode_cross_crate(name)
+    {
         // Attributes not marked encode-cross-crate don't need to be encoded for downstream crates.
     } else if attr.doc_str().is_some() {
         // We keep all doc comments reachable to rustdoc because they might be "imported" into
@@ -1099,7 +1106,6 @@ fn should_encode_variances<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId, def_kind: Def
         DefKind::Struct
         | DefKind::Union
         | DefKind::Enum
-        | DefKind::Variant
         | DefKind::OpaqueTy
         | DefKind::Fn
         | DefKind::Ctor(..)
@@ -1109,6 +1115,7 @@ fn should_encode_variances<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId, def_kind: Def
             matches!(tcx.opt_rpitit_info(def_id), Some(ty::ImplTraitInTraitData::Trait { .. }))
         }
         DefKind::Mod
+        | DefKind::Variant
         | DefKind::Field
         | DefKind::AssocConst
         | DefKind::TyParam
@@ -1338,7 +1345,7 @@ fn should_encode_const(def_kind: DefKind) -> bool {
 fn should_encode_fn_impl_trait_in_trait<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> bool {
     if let Some(assoc_item) = tcx.opt_associated_item(def_id)
         && assoc_item.container == ty::AssocItemContainer::Trait
-        && assoc_item.kind == ty::AssocKind::Fn
+        && assoc_item.is_fn()
     {
         true
     } else {
@@ -1469,7 +1476,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
             }
             if let DefKind::Fn | DefKind::AssocFn = def_kind {
                 self.tables.asyncness.set_some(def_id.index, tcx.asyncness(def_id));
-                record_array!(self.tables.fn_arg_names[def_id] <- tcx.fn_arg_names(def_id));
+                record_array!(self.tables.fn_arg_idents[def_id] <- tcx.fn_arg_idents(def_id));
             }
             if let Some(name) = tcx.intrinsic(def_id) {
                 record!(self.tables.intrinsic[def_id] <- name);
@@ -1691,7 +1698,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
 
         match item.container {
             AssocItemContainer::Trait => {
-                if let ty::AssocKind::Type = item.kind {
+                if item.is_type() {
                     self.encode_explicit_item_bounds(def_id);
                     self.encode_explicit_item_self_bounds(def_id);
                     if tcx.is_conditionally_const(def_id) {
@@ -1706,7 +1713,7 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
                 }
             }
         }
-        if let Some(rpitit_info) = item.opt_rpitit_info {
+        if let ty::AssocKind::Type { data: ty::AssocTypeData::Rpitit(rpitit_info) } = item.kind {
             record!(self.tables.opt_rpitit_info[def_id] <- rpitit_info);
             if matches!(rpitit_info, ty::ImplTraitInTraitData::Trait { .. }) {
                 record_array!(
@@ -2147,6 +2154,20 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
         self.lazy_array(&all_impls)
     }
 
+    fn encode_exportable_items(&mut self) -> LazyArray<DefIndex> {
+        empty_proc_macro!(self);
+        self.lazy_array(self.tcx.exportable_items(LOCAL_CRATE).iter().map(|def_id| def_id.index))
+    }
+
+    fn encode_stable_order_of_exportable_impls(&mut self) -> LazyArray<(DefIndex, usize)> {
+        empty_proc_macro!(self);
+        let stable_order_of_exportable_impls =
+            self.tcx.stable_order_of_exportable_impls(LOCAL_CRATE);
+        self.lazy_array(
+            stable_order_of_exportable_impls.iter().map(|(def_id, idx)| (def_id.index, *idx)),
+        )
+    }
+
     // Encodes all symbols exported from this crate into the metadata.
     //
     // This pass is seeded off the reachability list calculated in the
@@ -2199,7 +2220,7 @@ fn prefetch_mir(tcx: TyCtxt<'_>) {
     }
 
     let reachable_set = tcx.reachable_set(());
-    par_for_each_in(tcx.mir_keys(()), |&def_id| {
+    par_for_each_in(tcx.mir_keys(()), |&&def_id| {
         let (encode_const, encode_opt) = should_encode_mir(tcx, reachable_set, def_id);
 
         if encode_const {

@@ -1,8 +1,10 @@
 use rustc_ast::ptr::P;
+use rustc_ast::token::Delimiter;
+use rustc_ast::tokenstream::TokenStream;
 use rustc_ast::util::literal;
 use rustc_ast::{
     self as ast, AnonConst, AttrVec, BlockCheckMode, Expr, LocalKind, MatchKind, PatKind, UnOp,
-    attr, token,
+    attr, token, tokenstream,
 };
 use rustc_span::source_map::Spanned;
 use rustc_span::{DUMMY_SP, Ident, Span, Symbol, kw, sym};
@@ -55,13 +57,13 @@ impl<'a> ExtCtxt<'a> {
         &self,
         span: Span,
         path: ast::Path,
-        delim: ast::token::Delimiter,
-        tokens: ast::tokenstream::TokenStream,
+        delim: Delimiter,
+        tokens: TokenStream,
     ) -> P<ast::MacCall> {
         P(ast::MacCall {
             path,
             args: P(ast::DelimArgs {
-                dspan: ast::tokenstream::DelimSpan { open: span, close: span },
+                dspan: tokenstream::DelimSpan { open: span, close: span },
                 delim,
                 tokens,
             }),
@@ -230,6 +232,7 @@ impl<'a> ExtCtxt<'a> {
             self.pat_ident(sp, ident)
         };
         let local = P(ast::Local {
+            super_: None,
             pat,
             ty,
             id: ast::DUMMY_NODE_ID,
@@ -245,6 +248,7 @@ impl<'a> ExtCtxt<'a> {
     /// Generates `let _: Type;`, which is usually used for type assertions.
     pub fn stmt_let_type_only(&self, span: Span, ty: P<ast::Ty>) -> ast::Stmt {
         let local = P(ast::Local {
+            super_: None,
             pat: self.pat_wild(span),
             ty: Some(ty),
             id: ast::DUMMY_NODE_ID,
@@ -478,8 +482,8 @@ impl<'a> ExtCtxt<'a> {
                     span,
                     [sym::std, sym::unreachable].map(|s| Ident::new(s, span)).to_vec(),
                 ),
-                ast::token::Delimiter::Parenthesis,
-                ast::tokenstream::TokenStream::default(),
+                Delimiter::Parenthesis,
+                TokenStream::default(),
             ),
         )
     }

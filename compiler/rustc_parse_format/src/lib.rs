@@ -18,7 +18,7 @@
 pub use Alignment::*;
 pub use Count::*;
 pub use Position::*;
-use rustc_lexer::unescape;
+use rustc_literal_escaper::{Mode, unescape_unicode};
 
 // Note: copied from rustc_span
 /// Range inside of a `Span` used for diagnostics when we only have access to relative positions.
@@ -98,6 +98,30 @@ pub struct Argument<'a> {
     pub position_span: InnerSpan,
     /// How to format the argument
     pub format: FormatSpec<'a>,
+}
+
+impl<'a> Argument<'a> {
+    pub fn is_identifier(&self) -> bool {
+        matches!(self.position, Position::ArgumentNamed(_))
+            && matches!(
+                self.format,
+                FormatSpec {
+                    fill: None,
+                    fill_span: None,
+                    align: AlignUnknown,
+                    sign: None,
+                    alternate: false,
+                    zero_pad: false,
+                    debug_hex: None,
+                    precision: CountImplied,
+                    precision_span: None,
+                    width: CountImplied,
+                    width_span: None,
+                    ty: "",
+                    ty_span: None,
+                },
+            )
+    }
 }
 
 /// Specification for the formatting of an argument in the format string.
@@ -894,6 +918,11 @@ impl<'a> Parser<'a> {
     }
 
     fn suggest_positional_arg_instead_of_captured_arg(&mut self, arg: Argument<'a>) {
+        // If the argument is not an identifier, it is not a field access.
+        if !arg.is_identifier() {
+            return;
+        }
+
         if let Some(end) = self.consume_pos('.') {
             let byte_pos = self.to_span_index(end);
             let start = InnerOffset(byte_pos.0 + 1);
@@ -1094,11 +1123,9 @@ fn find_width_map_from_snippet(
 fn unescape_string(string: &str) -> Option<String> {
     let mut buf = String::new();
     let mut ok = true;
-    unescape::unescape_unicode(string, unescape::Mode::Str, &mut |_, unescaped_char| {
-        match unescaped_char {
-            Ok(c) => buf.push(c),
-            Err(_) => ok = false,
-        }
+    unescape_unicode(string, Mode::Str, &mut |_, unescaped_char| match unescaped_char {
+        Ok(c) => buf.push(c),
+        Err(_) => ok = false,
     });
 
     ok.then_some(buf)

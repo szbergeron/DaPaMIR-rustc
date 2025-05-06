@@ -1,16 +1,18 @@
 // ignore-tidy-linelength
 //@ build-fail
-//@ compile-flags: --error-format=human
-//@ error-pattern: the linked panic runtime `panic_runtime_unwind` is not compiled with this crate's panic strategy `abort`
 //@ dont-check-compiler-stderr
 //@ aux-build:panic-runtime-unwind.rs
 //@ compile-flags:-C panic=abort
+
+// NOTE: depending on the target's default panic strategy, there can be additional errors that
+// complain about linking two panic runtimes (e.g. precompiled `panic_unwind` if target default
+// panic strategy is unwind, in addition to `panic_runtime_unwind`). These additional errors will
+// not be observed on targets whose default panic strategy is abort, where `panic_abort` is linked
+// in instead.
+//@ dont-require-annotations: ERROR
 
 extern crate panic_runtime_unwind;
 
 fn main() {}
 
-// FIXME: The first and third errors are target-dependent.
-//FIXME~? ERROR cannot link together two panic runtimes: panic_unwind and panic_runtime_unwind
-//FIXME~? ERROR the linked panic runtime `panic_runtime_unwind` is not compiled with this crate's panic strategy `abort`
-//FIXME~? ERROR the crate `panic_unwind` requires panic strategy `unwind` which is incompatible with this crate's strategy of `abort`
+//~? ERROR the linked panic runtime `panic_runtime_unwind` is not compiled with this crate's panic strategy `abort`

@@ -12,7 +12,7 @@ use rustc_middle::ty::print::with_no_trimmed_paths;
 use rustc_middle::ty::{self, IsSuggestable, Ty, TyCtxt, TypeVisitableExt};
 use rustc_session::errors::ExprParenthesesNeeded;
 use rustc_span::source_map::Spanned;
-use rustc_span::{Ident, Span, Symbol, sym};
+use rustc_span::{Span, Symbol, sym};
 use rustc_trait_selection::infer::InferCtxtExt;
 use rustc_trait_selection::traits::{FulfillmentError, Obligation, ObligationCtxt};
 use tracing::debug;
@@ -234,7 +234,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // us do better coercions than we would be able to do otherwise,
         // particularly for things like `String + &String`.
         let rhs_ty_var = self.next_ty_var(rhs_expr.span);
-
         let result = self.lookup_op_method(
             (lhs_expr, lhs_ty),
             Some((rhs_expr, rhs_ty_var)),
@@ -372,7 +371,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 .associated_item_def_ids(def_id)
                                 .iter()
                                 .find(|item_def_id| {
-                                    self.tcx.associated_item(*item_def_id).name == sym::Output
+                                    self.tcx.associated_item(*item_def_id).name() == sym::Output
                                 })
                                 .cloned()
                         });
@@ -698,6 +697,57 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
                 }
 
+                let lhs_name_str = match lhs_expr.kind {
+                    hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
+                        path.segments.last().map_or("_".to_string(), |s| s.ident.to_string())
+                    }
+                    _ => self
+                        .tcx
+                        .sess
+                        .source_map()
+                        .span_to_snippet(lhs_expr.span)
+                        .unwrap_or("_".to_string()),
+                };
+
+                if op.span().can_be_used_for_suggestions() {
+                    match op {
+                        Op::AssignOp(Spanned { node: hir::AssignOpKind::AddAssign, .. })
+                            if lhs_ty.is_raw_ptr() && rhs_ty.is_integral() =>
+                        {
+                            err.multipart_suggestion(
+                                "consider using `add` or `wrapping_add` to do pointer arithmetic",
+                                vec![
+                                    (lhs_expr.span.shrink_to_lo(), format!("{} = ", lhs_name_str)),
+                                    (
+                                        lhs_expr.span.between(rhs_expr.span),
+                                        ".wrapping_add(".to_owned(),
+                                    ),
+                                    (rhs_expr.span.shrink_to_hi(), ")".to_owned()),
+                                ],
+                                Applicability::MaybeIncorrect,
+                            );
+                        }
+                        Op::AssignOp(Spanned { node: hir::AssignOpKind::SubAssign, .. }) => {
+                            if lhs_ty.is_raw_ptr() && rhs_ty.is_integral() {
+                                err.multipart_suggestion(
+                                    "consider using `sub` or `wrapping_sub` to do pointer arithmetic",
+                                    vec![
+                                        (lhs_expr.span.shrink_to_lo(), format!("{} = ", lhs_name_str)),
+                                        (
+                                            lhs_expr.span.between(rhs_expr.span),
+                                            ".wrapping_sub(".to_owned(),
+
+                                        ),
+                                        (rhs_expr.span.shrink_to_hi(), ")".to_owned()),
+                                    ],
+                                    Applicability::MaybeIncorrect,
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
                 let reported = err.emit();
                 Ty::new_error(self.tcx, reported)
             }
@@ -925,7 +975,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             lhs_ty, opname, trait_did
         );
 
-        let opname = Ident::with_dummy_span(opname);
         let (opt_rhs_expr, opt_rhs_ty) = opt_rhs.unzip();
         let cause = self.cause(
             span,
@@ -940,7 +989,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         );
 
         let method =
-            self.lookup_method_in_trait(cause.clone(), opname, trait_did, lhs_ty, opt_rhs_ty);
+            self.lookup_method_for_operator(cause.clone(), opname, trait_did, lhs_ty, opt_rhs_ty);
         match method {
             Some(ok) => {
                 let method = self.register_infer_ok_obligations(ok);

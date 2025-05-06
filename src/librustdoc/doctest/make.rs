@@ -301,8 +301,6 @@ fn parse_source(source: &str, crate_name: &Option<&str>) -> Result<ParseSourceIn
 
     let filename = FileName::anon_source_code(&wrapped_source);
 
-    // Any errors in parsing should also appear when the doctest is compiled for real, so just
-    // send all the errors that librustc_ast emits directly into a `Sink` instead of stderr.
     let sm = Arc::new(SourceMap::new(FilePathMapping::empty()));
     let fallback_bundle = rustc_errors::fallback_fluent_bundle(
         rustc_driver::DEFAULT_LOCALE_RESOURCES.to_vec(),
@@ -311,7 +309,8 @@ fn parse_source(source: &str, crate_name: &Option<&str>) -> Result<ParseSourceIn
     info.supports_color =
         HumanEmitter::new(stderr_destination(ColorConfig::Auto), fallback_bundle.clone())
             .supports_color();
-
+    // Any errors in parsing should also appear when the doctest is compiled for real, so just
+    // send all the errors that the parser emits directly into a `Sink` instead of stderr.
     let emitter = HumanEmitter::new(Box::new(io::sink()), fallback_bundle);
 
     // FIXME(misdreavus): pass `-Z treat-err-as-bug` to the doctest parser
@@ -339,20 +338,15 @@ fn parse_source(source: &str, crate_name: &Option<&str>) -> Result<ParseSourceIn
         *prev_span_hi = hi;
     }
 
-    // Recurse through functions body. It is necessary because the doctest source code is
-    // wrapped in a function to limit the number of AST errors. If we don't recurse into
-    // functions, we would thing all top-level items (so basically nothing).
     fn check_item(item: &ast::Item, info: &mut ParseSourceInfo, crate_name: &Option<&str>) -> bool {
         let mut is_extern_crate = false;
         if !info.has_global_allocator
-            && item.attrs.iter().any(|attr| attr.name_or_empty() == sym::global_allocator)
+            && item.attrs.iter().any(|attr| attr.has_name(sym::global_allocator))
         {
             info.has_global_allocator = true;
         }
         match item.kind {
             ast::ItemKind::Fn(ref fn_item) if !info.has_main_fn => {
-                // We only push if it's the top item because otherwise, we would duplicate
-                // its content since the top-level item was already added.
                 if fn_item.ident.name == sym::main {
                     info.has_main_fn = true;
                 }
@@ -377,7 +371,7 @@ fn parse_source(source: &str, crate_name: &Option<&str>) -> Result<ParseSourceIn
     }
 
     let mut prev_span_hi = 0;
-    let not_crate_attrs = [sym::forbid, sym::allow, sym::warn, sym::deny, sym::expect];
+    let not_crate_attrs = &[sym::forbid, sym::allow, sym::warn, sym::deny, sym::expect];
     let parsed = parser.parse_item(rustc_parse::parser::ForceCollect::No);
 
     let result = match parsed {
@@ -386,17 +380,13 @@ fn parse_source(source: &str, crate_name: &Option<&str>) -> Result<ParseSourceIn
                 && let Some(ref body) = fn_item.body =>
         {
             for attr in &item.attrs {
-                let attr_name = attr.name_or_empty();
-
-                if attr.style == AttrStyle::Outer || not_crate_attrs.contains(&attr_name) {
+                if attr.style == AttrStyle::Outer || attr.has_any_name(not_crate_attrs) {
                     // There is one exception to these attributes:
                     // `#![allow(internal_features)]`. If this attribute is used, we need to
                     // consider it only as a crate-level attribute.
-                    if attr_name == sym::allow
+                    if attr.has_name(sym::allow)
                         && let Some(list) = attr.meta_item_list()
-                        && list.iter().any(|sub_attr| {
-                            sub_attr.name_or_empty().as_str() == "internal_features"
-                        })
+                        && list.iter().any(|sub_attr| sub_attr.has_name(sym::internal_features))
                     {
                         push_to_s(&mut info.crate_attrs, source, attr.span, &mut prev_span_hi);
                     } else {
@@ -411,37 +401,46 @@ fn parse_source(source: &str, crate_name: &Option<&str>) -> Result<ParseSourceIn
                     push_to_s(&mut info.crate_attrs, source, attr.span, &mut prev_span_hi);
                 }
             }
+            let mut has_non_items = false;
             for stmt in &body.stmts {
                 let mut is_extern_crate = false;
                 match stmt.kind {
                     StmtKind::Item(ref item) => {
-                        is_extern_crate = check_item(&item, &mut info, crate_name);
+                        is_extern_crate = check_item(item, &mut info, crate_name);
                     }
-                    StmtKind::Expr(ref expr) if matches!(expr.kind, ast::ExprKind::Err(_)) => {
-                        reset_error_count(&psess);
-                        return Err(());
-                    }
-                    StmtKind::MacCall(ref mac_call) if !info.has_main_fn => {
-                        let mut iter = mac_call.mac.args.tokens.iter();
-
-                        while let Some(token) = iter.next() {
-                            if let TokenTree::Token(token, _) = token
-                                && let TokenKind::Ident(name, _) = token.kind
-                                && name == kw::Fn
-                                && let Some(TokenTree::Token(fn_token, _)) = iter.peek()
-                                && let TokenKind::Ident(fn_name, _) = fn_token.kind
-                                && fn_name == sym::main
-                                && let Some(TokenTree::Delimited(_, _, Delimiter::Parenthesis, _)) = {
-                                    iter.next();
-                                    iter.peek()
+                    // We assume that the macro calls will expand to item(s) even though they could
+                    // expand to statements and expressions.
+                    StmtKind::MacCall(ref mac_call) => {
+                        if !info.has_main_fn {
+                            // For backward compatibility, we look for the token sequence `fn main(…)`
+                            // in the macro input (!) to crudely detect main functions "masked by a
+                            // wrapper macro". For the record, this is a horrible heuristic!
+                            // See <https://github.com/rust-lang/rust/issues/56898>.
+                            let mut iter = mac_call.mac.args.tokens.iter();
+                            while let Some(token) = iter.next() {
+                                if let TokenTree::Token(token, _) = token
+                                    && let TokenKind::Ident(kw::Fn, _) = token.kind
+                                    && let Some(TokenTree::Token(ident, _)) = iter.peek()
+                                    && let TokenKind::Ident(sym::main, _) = ident.kind
+                                    && let Some(TokenTree::Delimited(.., Delimiter::Parenthesis, _)) = {
+                                        iter.next();
+                                        iter.peek()
+                                    }
+                                {
+                                    info.has_main_fn = true;
+                                    break;
                                 }
-                            {
-                                info.has_main_fn = true;
-                                break;
                             }
                         }
                     }
-                    _ => {}
+                    StmtKind::Expr(ref expr) => {
+                        if matches!(expr.kind, ast::ExprKind::Err(_)) {
+                            reset_error_count(&psess);
+                            return Err(());
+                        }
+                        has_non_items = true;
+                    }
+                    StmtKind::Let(_) | StmtKind::Semi(_) | StmtKind::Empty => has_non_items = true,
                 }
 
                 // Weirdly enough, the `Stmt` span doesn't include its attributes, so we need to
@@ -465,6 +464,11 @@ fn parse_source(source: &str, crate_name: &Option<&str>) -> Result<ParseSourceIn
                 } else {
                     push_to_s(&mut info.crates, source, span, &mut prev_span_hi);
                 }
+            }
+            if has_non_items {
+                // FIXME: if `info.has_main_fn` is `true`, emit a warning here to mention that
+                // this code will not be called.
+                info.has_main_fn = false;
             }
             Ok(info)
         }

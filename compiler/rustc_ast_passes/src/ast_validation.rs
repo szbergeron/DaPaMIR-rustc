@@ -82,6 +82,10 @@ struct AstValidator<'a> {
     /// Used to ban explicit safety on foreign items when the extern block is not marked as unsafe.
     extern_mod_safety: Option<Safety>,
 
+    lint_node_id: NodeId,
+
+    is_sdylib_interface: bool,
+
     lint_buffer: &'a mut LintBuffer,
 }
 
@@ -244,7 +248,7 @@ impl<'a> AstValidator<'a> {
     fn check_decl_no_pat(decl: &FnDecl, mut report_err: impl FnMut(Span, Option<Ident>, bool)) {
         for Param { pat, .. } in &decl.inputs {
             match pat.kind {
-                PatKind::Ident(BindingMode::NONE, _, None) | PatKind::Wild => {}
+                PatKind::Missing | PatKind::Ident(BindingMode::NONE, _, None) | PatKind::Wild => {}
                 PatKind::Ident(BindingMode::MUT, ident, None) => {
                     report_err(pat.span, Some(ident), true)
                 }
@@ -347,7 +351,7 @@ impl<'a> AstValidator<'a> {
                     sym::forbid,
                     sym::warn,
                 ];
-                !arr.contains(&attr.name_or_empty()) && rustc_attr_parsing::is_builtin_attr(*attr)
+                !attr.has_any_name(&arr) && rustc_attr_parsing::is_builtin_attr(*attr)
             })
             .for_each(|attr| {
                 if attr.is_doc_comment() {
@@ -684,7 +688,7 @@ impl<'a> AstValidator<'a> {
                     self.dcx().emit_err(errors::PatternFnPointer { span });
                 });
                 if let Extern::Implicit(extern_span) = bfty.ext {
-                    self.maybe_lint_missing_abi(extern_span, ty.id);
+                    self.handle_missing_abi(extern_span, ty.id);
                 }
             }
             TyKind::TraitObject(bounds, ..) => {
@@ -717,10 +721,12 @@ impl<'a> AstValidator<'a> {
         }
     }
 
-    fn maybe_lint_missing_abi(&mut self, span: Span, id: NodeId) {
+    fn handle_missing_abi(&mut self, span: Span, id: NodeId) {
         // FIXME(davidtwco): This is a hack to detect macros which produce spans of the
         // call site which do not have a macro backtrace. See #61963.
-        if self
+        if span.edition().at_least_edition_future() && self.features.explicit_extern_abis() {
+            self.dcx().emit_err(errors::MissingAbi { span });
+        } else if self
             .sess
             .source_map()
             .span_to_snippet(span)
@@ -824,7 +830,7 @@ fn validate_generic_param_order(dcx: DiagCtxtHandle<'_>, generics: &[GenericPara
 
 impl<'a> Visitor<'a> for AstValidator<'a> {
     fn visit_attribute(&mut self, attr: &Attribute) {
-        validate_attr::check_attr(&self.sess.psess, attr);
+        validate_attr::check_attr(&self.sess.psess, attr, self.lint_node_id);
     }
 
     fn visit_ty(&mut self, ty: &'a Ty) {
@@ -836,6 +842,8 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
         if item.attrs.iter().any(|attr| attr.is_proc_macro_attr()) {
             self.has_proc_macro_decls = true;
         }
+
+        let previous_lint_node_id = mem::replace(&mut self.lint_node_id, item.id);
 
         if let Some(ident) = item.kind.ident()
             && attr::contains_name(&item.attrs, sym::no_mangle)
@@ -945,9 +953,8 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
                 self.visit_attrs_vis_ident(&item.attrs, &item.vis, ident);
                 self.check_defaultness(item.span, *defaultness);
 
-                let is_intrinsic =
-                    item.attrs.iter().any(|a| a.name_or_empty() == sym::rustc_intrinsic);
-                if body.is_none() && !is_intrinsic {
+                let is_intrinsic = item.attrs.iter().any(|a| a.has_name(sym::rustc_intrinsic));
+                if body.is_none() && !is_intrinsic && !self.is_sdylib_interface {
                     self.dcx().emit_err(errors::FnWithoutBody {
                         span: item.span,
                         replace_span: self.ending_semi_or_hi(item.span),
@@ -996,7 +1003,7 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
                 }
 
                 if abi.is_none() {
-                    self.maybe_lint_missing_abi(*extern_span, item.id);
+                    self.handle_missing_abi(*extern_span, item.id);
                 }
                 self.with_in_extern_mod(*safety, |this| {
                     visit::walk_item(this, item);
@@ -1127,6 +1134,8 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
             }
             _ => visit::walk_item(self, item),
         }
+
+        self.lint_node_id = previous_lint_node_id;
     }
 
     fn visit_foreign_item(&mut self, fi: &'a ForeignItem) {
@@ -1370,7 +1379,7 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
             },
         ) = fk
         {
-            self.maybe_lint_missing_abi(*extern_span, id);
+            self.handle_missing_abi(*extern_span, id);
         }
 
         // Functions without bodies cannot have patterns.
@@ -1434,7 +1443,7 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
                     });
                 }
                 AssocItemKind::Fn(box Fn { body, .. }) => {
-                    if body.is_none() {
+                    if body.is_none() && !self.is_sdylib_interface {
                         self.dcx().emit_err(errors::AssocFnWithoutBody {
                             span: item.span,
                             replace_span: self.ending_semi_or_hi(item.span),
@@ -1682,6 +1691,7 @@ pub fn check_crate(
     sess: &Session,
     features: &Features,
     krate: &Crate,
+    is_sdylib_interface: bool,
     lints: &mut LintBuffer,
 ) -> bool {
     let mut validator = AstValidator {
@@ -1693,6 +1703,8 @@ pub fn check_crate(
         outer_impl_trait_span: None,
         disallow_tilde_const: Some(TildeConstReason::Item),
         extern_mod_safety: None,
+        lint_node_id: CRATE_NODE_ID,
+        is_sdylib_interface,
         lint_buffer: lints,
     };
     visit::walk_crate(&mut validator, krate);

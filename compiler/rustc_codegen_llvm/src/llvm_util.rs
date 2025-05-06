@@ -6,6 +6,7 @@ use std::sync::Once;
 use std::{ptr, slice, str};
 
 use libc::c_int;
+use rustc_codegen_ssa::TargetConfig;
 use rustc_codegen_ssa::base::wants_wasm_eh;
 use rustc_codegen_ssa::codegen_attrs::check_tied_features;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
@@ -256,7 +257,6 @@ pub(crate) fn to_llvm_features<'a>(sess: &Session, s: &'a str) -> Option<LLVMFea
         ("aarch64", "pmuv3") => Some(LLVMFeature::new("perfmon")),
         ("aarch64", "paca") => Some(LLVMFeature::new("pauth")),
         ("aarch64", "pacg") => Some(LLVMFeature::new("pauth")),
-        ("aarch64", "pauth-lr") if get_version().0 < 19 => None,
         // Before LLVM 20 those two features were packaged together as b16b16
         ("aarch64", "sve-b16b16") if get_version().0 < 20 => Some(LLVMFeature::new("b16b16")),
         ("aarch64", "sme-b16b16") if get_version().0 < 20 => Some(LLVMFeature::new("b16b16")),
@@ -270,20 +270,15 @@ pub(crate) fn to_llvm_features<'a>(sess: &Session, s: &'a str) -> Option<LLVMFea
         ("aarch64", "fhm") => Some(LLVMFeature::new("fp16fml")),
         ("aarch64", "fp16") => Some(LLVMFeature::new("fullfp16")),
         // Filter out features that are not supported by the current LLVM version
-        ("aarch64", "fpmr") if get_version().0 != 18 => None,
+        ("aarch64", "fpmr") => None, // only existed in 18
         ("arm", "fp16") => Some(LLVMFeature::new("fullfp16")),
-        // In LLVM 18, `unaligned-scalar-mem` was merged with `unaligned-vector-mem` into a single
-        // feature called `fast-unaligned-access`. In LLVM 19, it was split back out.
-        ("riscv32" | "riscv64", "unaligned-scalar-mem" | "unaligned-vector-mem")
-            if get_version().0 == 18 =>
+        // Filter out features that are not supported by the current LLVM version
+        ("loongarch64", "div32" | "lam-bh" | "lamcas" | "ld-seq-sa" | "scq")
+            if get_version().0 < 20 =>
         {
-            Some(LLVMFeature::new("fast-unaligned-access"))
+            None
         }
         // Filter out features that are not supported by the current LLVM version
-        ("riscv32" | "riscv64", "zaamo") if get_version().0 < 19 => None,
-        ("riscv32" | "riscv64", "zabha") if get_version().0 < 19 => None,
-        ("riscv32" | "riscv64", "zalrsc") if get_version().0 < 19 => None,
-        ("riscv32" | "riscv64", "zama16b") if get_version().0 < 19 => None,
         ("riscv32" | "riscv64", "zacas") if get_version().0 < 20 => None,
         // Enable the evex512 target feature if an avx512 target feature is enabled.
         ("x86", s) if s.starts_with("avx512") => {
@@ -295,10 +290,9 @@ pub(crate) fn to_llvm_features<'a>(sess: &Session, s: &'a str) -> Option<LLVMFea
         ("sparc", "leoncasa") => Some(LLVMFeature::new("hasleoncasa")),
         // In LLVM 19, there is no `v8plus` feature and `v9` means "SPARC-V9 instruction available and SPARC-V8+ ABI used".
         // https://github.com/llvm/llvm-project/blob/llvmorg-19.1.0/llvm/lib/Target/Sparc/MCTargetDesc/SparcELFObjectWriter.cpp#L27-L28
-        // Before LLVM 19, there is no `v8plus` feature and `v9` means "SPARC-V9 instruction available".
+        // Before LLVM 19, there was no `v8plus` feature and `v9` means "SPARC-V9 instruction available".
         // https://github.com/llvm/llvm-project/blob/llvmorg-18.1.0/llvm/lib/Target/Sparc/MCTargetDesc/SparcELFObjectWriter.cpp#L26
         ("sparc", "v8plus") if get_version().0 == 19 => Some(LLVMFeature::new("v9")),
-        ("sparc", "v8plus") if get_version().0 < 19 => None,
         ("powerpc", "power8-crypto") => Some(LLVMFeature::new("crypto")),
         // These new `amx` variants and `movrs` were introduced in LLVM20
         ("x86", "amx-avx512" | "amx-fp8" | "amx-movrs" | "amx-tf32" | "amx-transpose")
@@ -307,6 +301,9 @@ pub(crate) fn to_llvm_features<'a>(sess: &Session, s: &'a str) -> Option<LLVMFea
             None
         }
         ("x86", "movrs") if get_version().0 < 20 => None,
+        ("x86", "avx10.1") => Some(LLVMFeature::new("avx10.1-512")),
+        ("x86", "avx10.2") if get_version().0 < 20 => None,
+        ("x86", "avx10.2") if get_version().0 >= 20 => Some(LLVMFeature::new("avx10.2-512")),
         (_, s) => Some(LLVMFeature::new(s)),
     }
 }
@@ -315,7 +312,7 @@ pub(crate) fn to_llvm_features<'a>(sess: &Session, s: &'a str) -> Option<LLVMFea
 /// Must express features in the way Rust understands them.
 ///
 /// We do not have to worry about RUSTC_SPECIFIC_FEATURES here, those are handled outside codegen.
-pub(crate) fn target_features_cfg(sess: &Session) -> (Vec<Symbol>, Vec<Symbol>) {
+pub(crate) fn target_config(sess: &Session) -> TargetConfig {
     // Add base features for the target.
     // We do *not* add the -Ctarget-features there, and instead duplicate the logic for that below.
     // The reason is that if LLVM considers a feature implied but we do not, we don't want that to
@@ -415,7 +412,85 @@ pub(crate) fn target_features_cfg(sess: &Session) -> (Vec<Symbol>, Vec<Symbol>) 
 
     let target_features = f(false);
     let unstable_target_features = f(true);
-    (target_features, unstable_target_features)
+    let mut cfg = TargetConfig {
+        target_features,
+        unstable_target_features,
+        has_reliable_f16: true,
+        has_reliable_f16_math: true,
+        has_reliable_f128: true,
+        has_reliable_f128_math: true,
+    };
+
+    update_target_reliable_float_cfg(sess, &mut cfg);
+    cfg
+}
+
+/// Determine whether or not experimental float types are reliable based on known bugs.
+fn update_target_reliable_float_cfg(sess: &Session, cfg: &mut TargetConfig) {
+    let target_arch = sess.target.arch.as_ref();
+    let target_os = sess.target.options.os.as_ref();
+    let target_env = sess.target.options.env.as_ref();
+    let target_abi = sess.target.options.abi.as_ref();
+    let target_pointer_width = sess.target.pointer_width;
+
+    cfg.has_reliable_f16 = match (target_arch, target_os) {
+        // Selection failure <https://github.com/llvm/llvm-project/issues/50374>
+        ("s390x", _) => false,
+        // Unsupported <https://github.com/llvm/llvm-project/issues/94434>
+        ("arm64ec", _) => false,
+        // MinGW ABI bugs <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115054>
+        ("x86_64", "windows") if target_env == "gnu" && target_abi != "llvm" => false,
+        // Infinite recursion <https://github.com/llvm/llvm-project/issues/97981>
+        ("csky", _) => false,
+        ("hexagon", _) => false,
+        ("powerpc" | "powerpc64", _) => false,
+        ("sparc" | "sparc64", _) => false,
+        ("wasm32" | "wasm64", _) => false,
+        // `f16` support only requires that symbols converting to and from `f32` are available. We
+        // provide these in `compiler-builtins`, so `f16` should be available on all platforms that
+        // do not have other ABI issues or LLVM crashes.
+        _ => true,
+    };
+
+    cfg.has_reliable_f128 = match (target_arch, target_os) {
+        // Unsupported <https://github.com/llvm/llvm-project/issues/94434>
+        ("arm64ec", _) => false,
+        // Selection bug <https://github.com/llvm/llvm-project/issues/96432>
+        ("mips64" | "mips64r6", _) => false,
+        // Selection bug <https://github.com/llvm/llvm-project/issues/95471>
+        ("nvptx64", _) => false,
+        // ABI bugs <https://github.com/rust-lang/rust/issues/125109> et al. (full
+        // list at <https://github.com/rust-lang/rust/issues/116909>)
+        ("powerpc" | "powerpc64", _) => false,
+        // ABI unsupported  <https://github.com/llvm/llvm-project/issues/41838>
+        ("sparc", _) => false,
+        // Stack alignment bug <https://github.com/llvm/llvm-project/issues/77401>. NB: tests may
+        // not fail if our compiler-builtins is linked.
+        ("x86", _) => false,
+        // MinGW ABI bugs <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=115054>
+        ("x86_64", "windows") if target_env == "gnu" && target_abi != "llvm" => false,
+        // There are no known problems on other platforms, so the only requirement is that symbols
+        // are available. `compiler-builtins` provides all symbols required for core `f128`
+        // support, so this should work for everything else.
+        _ => true,
+    };
+
+    // Assume that working `f16` means working `f16` math for most platforms, since
+    // operations just go through `f32`.
+    cfg.has_reliable_f16_math = cfg.has_reliable_f16;
+
+    cfg.has_reliable_f128_math = match (target_arch, target_os) {
+        // LLVM lowers `fp128` math to `long double` symbols even on platforms where
+        // `long double` is not IEEE binary128. See
+        // <https://github.com/llvm/llvm-project/issues/44744>.
+        //
+        // This rules out anything that doesn't have `long double` = `binary128`; <= 32 bits
+        // (ld is `f64`), anything other than Linux (Windows and MacOS use `f64`), and `x86`
+        // (ld is 80-bit extended precision).
+        ("x86_64", _) => false,
+        (_, "linux") if target_pointer_width == 64 => true,
+        _ => false,
+    } && cfg.has_reliable_f128;
 }
 
 pub(crate) fn print_version() {
@@ -699,7 +774,7 @@ pub(crate) fn global_llvm_features(
                 )
             } else if let Some(feature) = feature.strip_prefix('-') {
                 // FIXME: Why do we not remove implied features on "-" here?
-                // We do the equivalent above in `target_features_cfg`.
+                // We do the equivalent above in `target_config`.
                 // See <https://github.com/rust-lang/rust/issues/134792>.
                 all_rust_features.push((false, feature));
             } else if !feature.is_empty() {
