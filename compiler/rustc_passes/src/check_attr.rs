@@ -140,6 +140,9 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
                         [sym::diagnostic, sym::on_unimplemented, ..] => {
                             self.check_diagnostic_on_unimplemented(attr.span(), hir_id, target)
                         }
+                        [sym::dapa, ..] => {
+                            self.check_dapa(hir_id, attr, target);
+                        }
                         [sym::inline, ..] => self.check_inline(hir_id, attr, span, target),
                         [sym::coverage, ..] => self.check_coverage(attr, span, target),
                         [sym::optimize, ..] => self.check_optimize(hir_id, attr, span, target),
@@ -413,6 +416,17 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
                 attr_span,
                 DiagnosticOnUnimplementedOnlyForTraits,
             );
+        }
+    }
+
+    /// Checks if `#[dapa]` is applied to a valid item
+    /// TODO: just...all of this
+    fn check_dapa(&self, _hir_id: HirId, _attr: &Attribute, target: Target) {
+        match target {
+            Target::Fn | Target::Closure => {},
+            _ => {
+                todo!("lint on apply to non-callable or method with unclear codegen path")
+            }
         }
     }
 
